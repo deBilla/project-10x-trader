@@ -1,0 +1,43 @@
+# Strategy parameters. Tuning these never requires touching code — the values
+# flow into both the indicator computation and the system prompt.
+
+# Minutes between ReAct ticks.
+tick_interval_minutes: 5
+
+# Keep true in production. When false, the trend filter is dropped from the prompt
+# so mean-reversion entries can fire against the prevailing trend (testing only).
+enforce_trend_filter: true
+
+# Indicator periods (consumed by indicators.py / pandas-ta).
+indicators:
+  rsi_period: 14
+  bbands_period: 20
+  bbands_std: 2.0
+  ema_fast: 9
+  ema_slow: 21
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  volume_avg_period: 20
+
+# Signal thresholds surfaced to Claude in the prompt (Claude still makes the call;
+# these frame the strategy rules).
+thresholds:
+  rsi_oversold: 30
+  rsi_overbought: 70
+  volume_surge_mult: 1.2   # current vol must exceed this * avg vol to confirm
+
+# Default bracket sizing hints given to Claude (the risk hook is the hard limit).
+bracket:
+  stop_loss_pct: 0.02      # suggested stop distance from entry
+  take_profit_pct: 0.04    # suggested target (2:1 reward:risk)
+
+# Momentum/breakout path — lets the agent trade WITH a trend (Donchian channel),
+# complementing the mean-reversion path. Risk limits are unchanged.
+breakout:
+  enabled: true
+  channel_period: 20       # bars for the breakout high/low
+  min_rsi_long: 50         # momentum longs: strength without exhaustion
+  max_rsi_long: 72
+  min_rsi_short: 28
+  max_rsi_short: 50

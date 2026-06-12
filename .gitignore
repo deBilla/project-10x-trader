@@ -1,0 +1,34 @@
+# --- secrets (NEVER commit) ---
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*credential*
+*secret*
+.docker/
+dockercfg*
+
+# --- python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- data / runtime ---
+*.log
+mongo_data/
+*.sqlite
+
+# --- os / editor ---
+.DS_Store
+.idea/
+.vscode/

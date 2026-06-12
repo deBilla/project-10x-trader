@@ -1,0 +1,12 @@
+# Equity risk limits — SMALL-ACCOUNT profile (~$1,000), fractional + software stops.
+# Fractional shares can't carry Alpaca bracket orders, so:
+#  - require_stop_loss: false (no brackets)
+#  - long_only: true (no fractional shorting; also enables the software stop manager
+#    in agent.py, which auto-closes at entry +/- the strategy bracket pcts)
+# Sized up so a ~$1,000 account deploys meaningfully across a few names.
+max_position_pct: 0.10      # ~$100/position on a $1k account (smaller -> more names)
+max_open_positions: 10      # broader diversification across the 30-symbol universe
+daily_drawdown_pct: 0.10
+require_stop_loss: false
+max_stop_distance_pct: 0.05
+long_only: true

@@ -1,0 +1,56 @@
+# Equity strategy — TREND-FOLLOWING (the backtested edge: PF ~3, regime-tested).
+# Deterministic daily Donchian breakout + SMA regime filter, ride winners.
+mode: trend
+tick_interval_minutes: 60         # daily signal; checked hourly during market hours
+
+# News risk-filter: Claude reads recent headlines before a breakout entry and
+# vetoes longs on strongly bearish news or imminent earnings (gap risk). Only
+# scores breakout candidates; cached; fails open. Can block, never initiate.
+news:
+  enabled: true
+  lookback_hours: 48
+  block_on_bearish: true
+  bearish_confidence_min: 0.6
+  block_on_imminent_earnings: true
+  cache_ttl_minutes: 120
+
+trend:
+  entry_channel: 50               # break above prior 50-day high to enter
+  exit_channel: 20                # break below prior 20-day low to exit
+  trend_ma: 100                   # only long above the 100-day SMA
+  use_regime_filter: true
+  cat_stop_pct: 0.20
+  history_days: 400
+
+# --- below: only used by the legacy LLM mode (kept for reference/backtests) ---
+enforce_trend_filter: false
+entry_mode: single_signal
+require_volume_confirmation: false
+
+indicators:
+  rsi_period: 14
+  bbands_period: 20
+  bbands_std: 2.0
+  ema_fast: 9
+  ema_slow: 21
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  volume_avg_period: 20
+
+thresholds:
+  rsi_oversold: 40      # looser than the classic 30 -> fires more often
+  rsi_overbought: 60    # looser than 70
+  volume_surge_mult: 1.2
+
+bracket:
+  stop_loss_pct: 0.02
+  take_profit_pct: 0.04
+
+breakout:
+  enabled: true
+  channel_period: 20
+  min_rsi_long: 50
+  max_rsi_long: 75
+  min_rsi_short: 25
+  max_rsi_short: 50

@@ -1,0 +1,90 @@
+# Phase 1 MVP stack: agent daemon + official Alpaca MCP server + Redis + MongoDB.
+# All secrets come from a local .env (see .env.example). Paper trading only.
+
+# Shared config for both agent instances. Each agent is the SAME image with a
+# different TRADER_AGENT_NAME (Redis namespace + journal tag) and TRADER_CONFIG_DIR
+# (which profile: equity vs crypto). They share one Alpaca account, MCP, Redis, Mongo.
+x-agent-base: &agent-base
+  build: .
+  env_file: .env
+  environment: &agent-env
+    # Auth: CLAUDE_CODE_OAUTH_TOKEN comes via env_file (.env). Blank the placeholder
+    # ANTHROPIC_API_KEY so it can't override the OAuth token and break auth.
+    ANTHROPIC_API_KEY: ""
+    ALPACA_MCP_TRANSPORT: http
+    ALPACA_MCP_URL: http://alpaca-mcp:8000/mcp
+    MONGO_URI: mongodb://mongo:27017
+    REDIS_URL: redis://redis:6379/0
+  volumes:
+    - ./config:/app/config   # live-mount so tuning applies on restart, no rebuild
+  depends_on:
+    - redis
+    - mongo
+    - alpaca-mcp
+  restart: unless-stopped
+
+services:
+  agent-equity:
+    <<: *agent-base
+    environment:
+      <<: *agent-env
+      TRADER_AGENT_NAME: equity
+      TRADER_CONFIG_DIR: /app/config/equity
+
+  agent-crypto:
+    <<: *agent-base
+    # PAUSED: gated behind the "crypto" profile so a plain `docker-compose up -d`
+    # does NOT start it (equities are the reliable paper-fill surface; Alpaca paper
+    # crypto fills are unreliable). Re-enable with:
+    #   docker-compose --profile crypto up -d agent-crypto
+    profiles: ["crypto"]
+    environment:
+      <<: *agent-env
+      TRADER_AGENT_NAME: crypto
+      TRADER_CONFIG_DIR: /app/config/crypto
+
+  alpaca-mcp:
+    # Builds the official server image straight from GitHub.
+    # NOTE: verify the run command/port against the repo README — the server is
+    # started in HTTP (streamable-http) mode here so the agent can reach it by
+    # service name. Adjust `command` if the repo's entrypoint differs.
+    build:
+      # Pin the default branch (the repo uses `main`, not `master`).
+      context: https://github.com/alpacahq/alpaca-mcp-server.git#main
+    environment:
+      ALPACA_API_KEY: ${ALPACA_API_KEY}
+      ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY}
+      ALPACA_PAPER_TRADE: ${ALPACA_PAPER_TRADE:-true}
+      PORT: "8000"
+    # The image's own CMD already runs: alpaca-mcp-server --transport
+    # streamable-http --host 0.0.0.0 (port defaults to $PORT). No override needed.
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+  # Web UI for the trade/decision journal -> http://localhost:8081
+  mongo-express:
+    image: mongo-express:1.0.2
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://mongo:27017
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: trader
+    ports:
+      - "8081:8081"
+    depends_on:
+      - mongo
+    restart: unless-stopped
+
+volumes:
+  mongo_data:

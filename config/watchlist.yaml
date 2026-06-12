@@ -1,0 +1,15 @@
+# Asset whitelist. The risk hook rejects any order whose symbol is not listed here.
+# `asset_class` controls which Alpaca tool is used (place_stock_order vs place_crypto_order).
+symbols:
+  - symbol: SPY
+    asset_class: us_equity
+    bar_timeframe: 5Min      # timeframe requested from get_stock_bars
+    lookback_bars: 120       # bars pulled per tick for indicator computation
+  - symbol: QQQ
+    asset_class: us_equity
+    bar_timeframe: 5Min
+    lookback_bars: 120
+  - symbol: BTC/USD
+    asset_class: crypto
+    bar_timeframe: 5Min
+    lookback_bars: 120

@@ -1,0 +1,20 @@
+# Hardcoded risk limits enforced in-process by the PreToolUse hook,
+# independently of anything the LLM proposes.
+
+# Max fraction of current account equity allowed in a single new position (notional).
+max_position_pct: 0.05
+
+# Max number of simultaneously open positions.
+max_open_positions: 3
+
+# Daily drawdown kill-switch. If equity falls this fraction below the day's
+# starting anchor, the daemon force-liquidates all positions and pauses until
+# the next calendar trading day.
+daily_drawdown_pct: 0.10
+
+# Every entry order MUST carry a bracket stop_loss. Orders without one are denied.
+require_stop_loss: true
+
+# Reject orders whose stop_loss is further than this fraction from entry
+# (guards against an effectively-absent stop).
+max_stop_distance_pct: 0.05

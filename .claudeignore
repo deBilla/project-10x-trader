@@ -1,0 +1,10 @@
+# Files Claude/agents should not read or surface — sensitive material.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*credential*
+*secret*
+.venv/

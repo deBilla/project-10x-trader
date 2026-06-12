@@ -1,0 +1,41 @@
+# Equity watchlist — 30 diversified, liquid, optionable names ("ETF-like" breadth):
+# broad-market + sector ETFs and large-caps across tech, finance, healthcare,
+# energy, industrials, and consumer. Trend mode pulls daily bars for each.
+symbols:
+  # --- broad-market / index ETFs ---
+  - {symbol: SPY,   asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: QQQ,   asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: IWM,   asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: DIA,   asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  # --- technology ---
+  - {symbol: AAPL,  asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: MSFT,  asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: NVDA,  asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: AMD,   asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: GOOGL, asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: META,  asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: AMZN,  asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: AVGO,  asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: CRM,   asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: ORCL,  asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  # --- communication / consumer discretionary ---
+  - {symbol: NFLX,  asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: TSLA,  asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: DIS,   asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  # --- financials ---
+  - {symbol: JPM,   asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: BAC,   asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: V,     asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: MA,    asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  # --- healthcare ---
+  - {symbol: UNH,   asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: JNJ,   asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: LLY,   asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  # --- energy / industrials ---
+  - {symbol: XOM,   asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: CVX,   asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: CAT,   asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  # --- consumer staples / other ---
+  - {symbol: WMT,   asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: COST,  asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}
+  - {symbol: COIN,  asset_class: us_equity, bar_timeframe: 5Min, lookback_bars: 120}

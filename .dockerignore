@@ -1,0 +1,30 @@
+# Keep secrets and junk out of the image build context.
+# Compose passes env at runtime via env_file; .env must never be baked in.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*credential*
+*secret*
+
+.git
+.gitignore
+.dockerignore
+.claudeignore
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+
+tests/
+*.md
+mongo_data/
+*.log
+.DS_Store

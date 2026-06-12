@@ -1,0 +1,14 @@
+# Crypto agent whitelist (24/7). Alpaca spot crypto: long-only, no brackets.
+symbols:
+  - symbol: BTC/USD
+    asset_class: crypto
+    bar_timeframe: 5Min
+    lookback_bars: 120
+  - symbol: ETH/USD
+    asset_class: crypto
+    bar_timeframe: 5Min
+    lookback_bars: 120
+  - symbol: SOL/USD
+    asset_class: crypto
+    bar_timeframe: 5Min
+    lookback_bars: 120

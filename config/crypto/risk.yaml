@@ -1,0 +1,11 @@
+# Crypto risk limits. Spot crypto can't be shorted or bracketed, so:
+#  - long_only: deny sell/short entries (exits go via close_position)
+#  - require_stop_loss: false (no brackets); protection is the software stop
+#    manager in agent.py (entry +/- bracket pcts) plus the drawdown kill-switch.
+# Lower position cap since both agents size off the same shared account equity.
+max_position_pct: 0.03
+max_open_positions: 3
+daily_drawdown_pct: 0.10
+require_stop_loss: false
+max_stop_distance_pct: 0.05
+long_only: true
