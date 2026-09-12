@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import logging
 
+import pandas as pd
+
 from .backtest.trend import desired_long
 from .config import AppConfig
 from .market_data import MarketData
@@ -19,6 +21,31 @@ from .persistence.journal import Journal
 from .risk.drawdown import DrawdownMonitor
 
 log = logging.getLogger("trader.trend")
+
+
+def completed_bars(bars: "pd.DataFrame", market_open: bool) -> "pd.DataFrame":
+    """Drop today's bar while the session is still running.
+
+    `desired_long` mirrors the backtester, which evaluates the channel at a bar's
+    CLOSE. During market hours Alpaca's last 1Day bar is today's *partial* bar, so
+    `close.iloc[-1]` is the live intraday price: a dip below the exit channel then
+    triggers a `trend_break` exit the backtest never takes, and the next tick
+    re-enters once price recovers. Live traded ~2.75x the backtested rate that way,
+    including same-day sell/buy pairs on SPY, AAPL, AMD, QQQ and LLY.
+
+    Note the catastrophic stop deliberately keeps using the live price — the
+    backtester checks it intrabar against the bar's low, so reacting intraday is
+    the behaviour that matches there. Only the channel signal needs a closed bar.
+    """
+    if not market_open or bars.empty:
+        return bars
+    last = bars.index[-1]
+    today = pd.Timestamp.now(tz="UTC").normalize()
+    last_day = pd.Timestamp(last)
+    last_day = last_day.tz_localize("UTC") if last_day.tzinfo is None else last_day.tz_convert("UTC")
+    if last_day.normalize() >= today:
+        return bars.iloc[:-1]
+    return bars
 
 
 class TrendTrader:
@@ -41,6 +68,14 @@ class TrendTrader:
 
         acct = self._market.get_account()
         dd = self._drawdown.check(acct.equity)
+        # One clock read per tick. Assume open on failure: that only ever discards
+        # the newest bar, which is the safe direction — acting on a partial bar is
+        # what diverged live from the backtest.
+        try:
+            market_open = self._market.is_market_open()
+        except Exception:  # noqa: BLE001
+            log.warning("[%s] clock check failed; treating session as open", name)
+            market_open = True
         positions = self._market.get_positions_detail()
         open_syms = [s for s in positions if s in whitelist]
 
@@ -56,13 +91,17 @@ class TrendTrader:
             except Exception as exc:  # noqa: BLE001
                 log.warning("[%s] history error %s: %s", name, sym, exc)
                 continue
-            if len(bars) < tp.trend_ma + 2:
+            # The channel signal must see only completed sessions (see
+            # `completed_bars`); the live price is still used for the cat stop below.
+            signal_bars = completed_bars(bars, market_open)
+            if len(signal_bars) < tp.trend_ma + 2:
                 continue
 
-            want_long = desired_long(bars, tp.entry_channel, tp.exit_channel,
+            want_long = desired_long(signal_bars, tp.entry_channel, tp.exit_channel,
                                      tp.trend_ma, tp.use_regime_filter) and not dd.paused
             holding = sym in positions
             states.append({"symbol": sym, "want_long": want_long, "holding": holding,
+                           "signal_close": round(float(signal_bars["close"].iloc[-1]), 2),
                            "price": round(float(bars["close"].iloc[-1]), 2)})
 
             try:
