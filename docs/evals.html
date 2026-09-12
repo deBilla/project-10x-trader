@@ -108,6 +108,31 @@
         <em>"NO edge"</em>. That line is what killed version one.</p>
       </div>
     </div>
+
+    <h3>What it says about the live strategy</h3>
+    <div class="col">
+      <p>Run over 1,500 days across the 30-symbol universe, at 5 bps per side and 10% position
+      sizing:</p>
+    </div>
+
+    <div class="code wide">
+<pre>ALL   256 trades   55% win   <span class="c-acc">+5.52%</span>/trade   PF 2.73   totRet <span class="c-acc">+290.36%</span>   maxDD 11%   B&amp;H <span class="c-dim">+175.83%</span>
+VERDICT: POSITIVE edge (after modeled costs)</pre>
+    </div>
+
+    <div class="col">
+      <p>So the strategy does clear its own benchmark on this data — +290% against +176% for
+      holding the same names, at 11% maximum drawdown against the roughly 30% an equity basket
+      took through 2022. That is the claim the project makes: comparable return, materially less
+      pain.</p>
+      <p>Read the per-symbol column carefully though, because it is not an apples-to-apples
+      comparison. Strategy returns compound 256 sequential trades at 10% sizing; the buy-and-hold
+      column is 100% allocation held throughout. NVDA shows +22.55% for the strategy against
+      +1053.75% held — the strategy was only ever 10% exposed to it, and only while the channel
+      said so.</p>
+      <p>And none of it survived contact with the live implementation. See
+      <a href="results.html#live">the live forward result</a>.</p>
+    </div>
   </section>
 
   <section id="why-hard">

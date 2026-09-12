@@ -124,6 +124,74 @@
     </div>
   </section>
 
+  <section id="live">
+    <h2>The live forward result</h2>
+    <div class="col">
+      <p>Everything above this point is a backtest. In September 2026 the obvious question finally
+      got asked — what has the agent actually done? — and the answer is the most valuable data in
+      the project, because it is the only part nobody could have fitted.</p>
+      <p>The agent had been running continuously for three months on a $1,000 paper account: 481
+      ticks, 23 buys, 21 sells, 16 news vetoes, fully deployed in 10 positions.</p>
+    </div>
+
+    <dl class="kpis">
+      <div class="kpi"><div class="k">The agent</div><div class="v neg">+0.82%</div>
+        <div class="s">93 days, 2026-06-10 → 09-11</div></div>
+      <div class="kpi"><div class="k">Its own 30 names</div><div class="v pos">+5.70%</div>
+        <div class="s">equal weight, held throughout</div></div>
+      <div class="kpi"><div class="k">SPY</div><div class="v">+4.73%</div>
+        <div class="s">same window</div></div>
+      <div class="kpi"><div class="k">Max drawdown</div><div class="v">5.61%</div>
+        <div class="s">peak $1,056.23</div></div>
+    </dl>
+
+    <div class="verdict no">
+      <span class="label">It lost to doing nothing</span>
+      <p>Underperformed a passive basket of its own universe by <span class="num">4.9</span>
+      percentage points, and SPY by <span class="num">3.9</span>. Against a backtest implying
+      roughly 39%/yr, this is the gap that matters — and it is not a subtle one.</p>
+    </div>
+
+    <h3>The cause was an implementation bug, not the strategy</h3>
+    <div class="col">
+      <p>The live trade log did not look like the backtest's. Three signals, all pointing the
+      same way:</p>
+      <ul>
+        <li><strong>Same-day round trips.</strong> SPY ran
+        <code>S07-29 B07-29 S07-30 B08-04 S09-01 B09-09 S09-10</code>. Sold and re-bought within
+        one session. Same pattern on AAPL, AMD, QQQ and LLY.</li>
+        <li><strong>Every exit was intraday.</strong> All 21 landed between 13:00 and 18:00 UTC.
+        The US market closes at 20:00. Not one exit happened after a close.</li>
+        <li><strong>Trade rate ~2.75× the backtest.</strong> 44 order actions in 93 days against
+        the ~16 the backtested frequency implies.</li>
+      </ul>
+      <p>The mechanism: <code>get_history(..., "1Day")</code> returns today's <em>partial</em>
+      bar while the session is open, so <code>desired_long()</code> was reading
+      <code>close.iloc[-1]</code> as a close when it was the live intraday price. An intraday dip
+      below the prior 20-day low flipped the signal and triggered a <code>trend_break</code> exit
+      the backtester — which only ever evaluates true daily closes — can never take. Price
+      recovered, the next tick bought back in, and the spread was paid twice.</p>
+    </div>
+
+    <div class="note">
+      <span class="label">The number that makes it unambiguous</span>
+      <p>The ten names the agent was holding — AAPL, BAC, CRM, DIS, JNJ, JPM, MA, MSFT, NVDA, V —
+      returned an average of <strong>+16.8%</strong> over the live window. Simply holding exactly
+      what it held would have made 16.8%. It made 0.82%. The stock selection worked; the churn
+      ate all of it.</p>
+    </div>
+
+    <div class="col">
+      <p>Fixed in <code>334750e</code>: <code>completed_bars()</code> drops the in-progress bar
+      before the channel read, with a regression test that reproduces the bug and asserts
+      live/backtest signal equivalence on closed data.</p>
+      <p>The deeper failure is not the two-line bug. It is that <strong>nothing in the system was
+      comparing live behaviour against backtested behaviour</strong>. A project whose entire
+      thesis is "measure before you trust it" ran a different strategy than the one it validated,
+      for three months, and the only reason it surfaced was someone writing documentation.</p>
+    </div>
+  </section>
+
   <section id="engineering">
     <h2>What was achieved on the engineering side</h2>
 
@@ -181,11 +249,15 @@
 
     <div class="verdict no">
       <span class="label">Not supported</span>
-      <p>That this makes money going forward. That the news filter has predictive edge — the eval
-      hints at it but n=11 cannot establish it. That the Sharpe figure is comparable to a fund's, since it is a
+      <p>That this makes money going forward — and this is no longer merely unproven. Over 93
+      days live it returned +0.82% against +5.70% for holding the same names. That window is too
+      short and too regime-specific to condemn the strategy, but it is real out-of-sample
+      evidence and it points the wrong way.</p>
+      <p>Also not supported: that the news filter has predictive edge — the eval hints at it but
+      n=11 cannot establish it. That the Sharpe figure is comparable to a fund's, since it is a
       per-trade annualisation rather than a daily-returns Sharpe. That the strategy generalises
-      beyond liquid US mega-caps in a bull market, which is the only regime it has been
-      seriously tested in.</p>
+      beyond liquid US mega-caps in a bull market, which is the only regime it has been seriously
+      tested in.</p>
     </div>
 
     <div class="col">
@@ -218,6 +290,10 @@
     <h3>Live mechanics</h3>
     <div class="col">
       <ul>
+        <li><strong>Nothing compares live behaviour to backtested behaviour.</strong> This is
+        the gap that let the partial-bar bug run for three months. Trade rate, holding period and
+        exit-time-of-day are all cheap to assert against the backtest's distribution, and none of
+        them were.</li>
         <li><strong>No resting stops.</strong> Fractional positions cannot carry brackets, so
         exits depend on the engine ticking. Overnight and weekend gap risk is unhedged.</li>
         <li><strong>Stale drawdown anchor</strong> after a mid-session balance change trips a
@@ -252,7 +328,11 @@
     <div class="col">
       <p>The measurement work points at an obvious ordering, and it is not "add more
       strategies".</p>
-      <p><strong>Close the live-mechanics gaps first.</strong> Startup reconciliation, per-tick
+      <p><strong>Verify the fix forward.</strong> The partial-bar fix is deployed but unproven.
+      The check is mechanical: trade rate should fall toward roughly 16 actions per 93 days, exits
+      should cluster after the close rather than mid-session, and average hold should climb toward
+      the backtest's 51 bars. If it does not, the divergence has another cause.</p>
+      <p><strong>Then close the remaining live-mechanics gaps.</strong> Startup reconciliation, per-tick
       stale-order cancellation in the trend path, a liveness assertion on the scheduler, and
       anchor invalidation. These are small, they are known, and every one of them is a way the
       system could lose money for reasons unrelated to whether the strategy is any good.</p>

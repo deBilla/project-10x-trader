@@ -35,9 +35,14 @@
 
     <dl class="kpis">
       <div class="kpi">
-        <div class="k">Live strategy</div>
+        <div class="k">Backtested edge</div>
         <div class="v pos">+5.5%</div>
-        <div class="s">expectancy per trade, 255 trades over 1,500 days</div>
+        <div class="s">expectancy per trade, 256 trades over 1,500 days</div>
+      </div>
+      <div class="kpi">
+        <div class="k">Live, 93 days</div>
+        <div class="v neg">+0.82%</div>
+        <div class="s">vs +5.70% for holding the same 30 names</div>
       </div>
       <div class="kpi">
         <div class="k">Profit factor</div>
@@ -79,7 +84,7 @@
   </section>
 
   <section id="arc">
-    <h2>The three-act arc</h2>
+    <h2>The four-act arc</h2>
 
     <div class="finding">
       <div class="finding-n">01</div>
@@ -124,6 +129,27 @@
         it, but at n=11 the odds of doing that well by chance are about
         <span class="num">0.17</span>. Suggestive and underpowered.</p>
         <div class="swing"><b>Verdict</b> kept, constrained, and not expanded</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-n">04</div>
+      <div>
+        <h3>Check the live account <span class="pill killed">bug found</span></h3>
+        <p>Writing this up prompted the obvious question nobody had asked: what has the thing
+        actually done? The agent had been running for three months on a $1,000 paper account.
+        Over 93 days it returned <span class="num">+0.82%</span> while an equal-weight basket of
+        its own 30 symbols returned <span class="num pos-t">+5.70%</span> and SPY returned
+        <span class="num">+4.73%</span>. It lost to doing nothing.</p>
+        <p>The cause was not the strategy. <code>get_history(..., "1Day")</code> returns today's
+        <em>partial</em> bar while the session is open, so the channel signal was reading the
+        live intraday price as if it were a close. An intraday dip under the 20-day low triggered
+        an exit the backtester can never take, and the next tick bought back in once price
+        recovered. Every one of the 21 exits landed mid-session; SPY sold and re-bought on the
+        same day.</p>
+        <p>The tell: the ten names it held averaged <span class="num">+16.8%</span> over the
+        window. The stock selection worked. The churn ate it.</p>
+        <div class="swing"><b>Verdict</b> right strategy, wrong implementation &middot; fixed in <code>334750e</code></div>
       </div>
     </div>
   </section>

@@ -218,6 +218,19 @@
       corrupt, and no position memory to persist.</p>
     </div>
 
+    <div class="note">
+      <span class="label">The bar the signal is allowed to see</span>
+      <p>The channel read must use <strong>completed sessions only</strong>. Alpaca's last
+      <code>1Day</code> bar is today's partial bar while the market is open, so
+      <code>close.iloc[-1]</code> is the live intraday price — and feeding that to
+      <code>desired_long()</code> turns a daily-close strategy into an intraday one that
+      whipsaws. This shipped, ran for three months, and cost most of the live return before it
+      was caught; <code>completed_bars()</code> now drops the in-progress bar.</p>
+      <p>The catastrophic stop is the deliberate exception: the backtester checks it
+      <em>intrabar</em> against the bar's low, so reacting to the live price is the matching
+      behaviour there. Only the channel signal needs a closed bar.</p>
+    </div>
+
     <h4>Step 3 — sizing, and the cash trap</h4>
     <div class="col">
       <p>Target size is 10% of <em>equity</em>, but only <em>cash</em> can be spent. The engine
