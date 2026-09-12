@@ -1,0 +1,173 @@
+{
+  "config": {
+    "days": 1500,
+    "symbols": 30,
+    "model": "claude-opus-4-8",
+    "prompt_version": "v1",
+    "lookback_hours": 48,
+    "bearish_confidence_min": 0.6,
+    "block_on_imminent_earnings": true
+  },
+  "baseline": {
+    "n_trades": 255,
+    "win_rate": 0.5529411764705883,
+    "avg_win": 0.15776516927041406,
+    "avg_loss": -0.07212886624655523,
+    "expectancy": 0.054989012215769,
+    "profit_factor": 2.7053052994152185,
+    "total_return": 2.8638234179247153,
+    "max_drawdown": 0.12415422185269054,
+    "sharpe": 2.450935685590491,
+    "avg_bars_held": 50.67058823529412
+  },
+  "filtered": {
+    "n_trades": 255,
+    "win_rate": 0.5529411764705883,
+    "avg_win": 0.157892409008688,
+    "avg_loss": -0.07158592776295464,
+    "expectancy": 0.055302093746071354,
+    "profit_factor": 2.7280219124915477,
+    "total_return": 2.894793310831891,
+    "max_drawdown": 0.11921669480294317,
+    "sharpe": 2.4659987780755412,
+    "avg_bars_held": 50.576470588235296
+  },
+  "activity": {
+    "consulted": 271,
+    "blocked_entries": 11,
+    "veto_days": 15,
+    "llm_calls": 149,
+    "cached": 0,
+    "no_headlines": 11,
+    "errors": 111
+  },
+  "attribution": {
+    "priceable": 11,
+    "killed_winners": 4,
+    "avoided_losers": 7,
+    "block_precision": 0.6363636363636364
+  },
+  "vetoes": [
+    {
+      "symbol": "AAPL",
+      "date": "2023-02-03",
+      "label": "bearish",
+      "confidence": 0.6,
+      "earnings_imminent": false,
+      "reason": "bearish news (conf 0.60): Mixed earnings reaction, Mac/PC contraction, Apple leading tech disappointment; some PT cuts despite maintained ratings.",
+      "n_headlines": 15,
+      "counterfactual_ret": 0.1960015322558867,
+      "reentered": true
+    },
+    {
+      "symbol": "AMZN",
+      "date": "2023-02-01",
+      "label": "neutral",
+      "confidence": 0.55,
+      "earnings_imminent": true,
+      "reason": "earnings imminent (gap risk)",
+      "n_headlines": 15,
+      "counterfactual_ret": -0.1456685825530248,
+      "reentered": true
+    },
+    {
+      "symbol": "META",
+      "date": "2023-10-11",
+      "label": "neutral",
+      "confidence": 0.55,
+      "earnings_imminent": true,
+      "reason": "earnings imminent (gap risk)",
+      "n_headlines": 15,
+      "counterfactual_ret": -0.1030687522696176,
+      "reentered": true
+    },
+    {
+      "symbol": "CRM",
+      "date": "2023-11-29",
+      "label": "neutral",
+      "confidence": 0.55,
+      "earnings_imminent": true,
+      "reason": "earnings imminent (gap risk)",
+      "n_headlines": 9,
+      "counterfactual_ret": 0.1036709087145901,
+      "reentered": true
+    },
+    {
+      "symbol": "TSLA",
+      "date": "2024-07-01",
+      "label": "bearish",
+      "confidence": 0.6,
+      "earnings_imminent": false,
+      "reason": "bearish news (conf 0.60): Q2 delivery decline feared, weak China, Wells Fargo underweight; mixed analyst views cap downside.",
+      "n_headlines": 15,
+      "counterfactual_ret": -0.15466730977331913,
+      "reentered": true
+    },
+    {
+      "symbol": "GOOGL",
+      "date": "2024-10-29",
+      "label": "bullish",
+      "confidence": 0.75,
+      "earnings_imminent": true,
+      "reason": "earnings imminent (gap risk)",
+      "n_headlines": 15,
+      "counterfactual_ret": 0.037059781349160686,
+      "reentered": true
+    },
+    {
+      "symbol": "AVGO",
+      "date": "2026-04-09",
+      "label": "bearish",
+      "confidence": 0.6,
+      "earnings_imminent": false,
+      "reason": "bearish news (conf 0.60): Two analyst downgrades to Neutral despite Google deal; momentum shifting to Marvell.",
+      "n_headlines": 11,
+      "counterfactual_ret": 0.11434975411259331,
+      "reentered": true
+    },
+    {
+      "symbol": "DIS",
+      "date": "2023-01-20",
+      "label": "bearish",
+      "confidence": 0.55,
+      "earnings_imminent": true,
+      "reason": "earnings imminent (gap risk)",
+      "n_headlines": 5,
+      "counterfactual_ret": -0.018854826206467324,
+      "reentered": true
+    },
+    {
+      "symbol": "NVDA",
+      "date": "2026-02-25",
+      "label": "neutral",
+      "confidence": 0.55,
+      "earnings_imminent": true,
+      "reason": "earnings imminent (gap risk)",
+      "n_headlines": 15,
+      "counterfactual_ret": -0.0884242721189526,
+      "reentered": true
+    },
+    {
+      "symbol": "JPM",
+      "date": "2023-01-06",
+      "label": "bearish",
+      "confidence": 0.6,
+      "earnings_imminent": true,
+      "reason": "earnings imminent (gap risk)",
+      "n_headlines": 5,
+      "counterfactual_ret": -0.0704591783570126,
+      "reentered": true
+    },
+    {
+      "symbol": "UNH",
+      "date": "2023-04-05",
+      "label": "bullish",
+      "confidence": 0.6,
+      "earnings_imminent": true,
+      "reason": "earnings imminent (gap risk)",
+      "n_headlines": 8,
+      "counterfactual_ret": -0.09310134385614133,
+      "reentered": true
+    }
+  ]
+}

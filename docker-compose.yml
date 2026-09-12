@@ -20,7 +20,6 @@ x-agent-base: &agent-base
   depends_on:
     - redis
     - mongo
-    - alpaca-mcp
   restart: unless-stopped
 
 services:
@@ -44,6 +43,18 @@ services:
       TRADER_CONFIG_DIR: /app/config/crypto
 
   alpaca-mcp:
+    # OFF by default (profile-gated). Only the LEGACY LLM mode talks to MCP —
+    # `mcp_client` is imported solely by agent.py's TradingAgent, and main.py
+    # only builds that when strategy.mode != "trend". The live equity agent is
+    # mode: trend and trades direct via alpaca-py, so this never gets dialled.
+    #
+    # It is also currently UNBUILDABLE: upstream main's Dockerfile does
+    # `COPY .github/core/ ./.github/core/`, which isn't present in the git build
+    # context, so the build fails computing that layer's cache key. If you ever
+    # switch back to LLM mode, pin a known-good commit SHA in the context below
+    # (`...git#<sha>`) instead of `#main`, then:
+    #   docker compose --profile llm up -d alpaca-mcp
+    profiles: ["llm"]
     # Builds the official server image straight from GitHub.
     # NOTE: verify the run command/port against the repo README — the server is
     # started in HTTP (streamable-http) mode here so the agent can reach it by
@@ -73,15 +84,25 @@ services:
     restart: unless-stopped
 
   # Web UI for the trade/decision journal -> http://localhost:8081
+  #
+  # OFF by default (profile-gated) since the stack moved to the shared home
+  # server: the basic-auth below is weak and the host is reachable. Inspect the
+  # journal over SSH instead:
+  #   docker compose exec mongo mongosh trader --eval 'db.ticks.find().sort({_id:-1}).limit(1)'
+  # To bring the UI up anyway, tunnel it rather than publishing it:
+  #   ssh -L 8081:localhost:8081 user@your-host
+  #   docker compose --profile ui up -d mongo-express
   mongo-express:
     image: mongo-express:1.0.2
+    profiles: ["ui"]
     environment:
       ME_CONFIG_MONGODB_URL: mongodb://mongo:27017
       ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
       ME_CONFIG_BASICAUTH_USERNAME: admin
       ME_CONFIG_BASICAUTH_PASSWORD: trader
     ports:
-      - "8081:8081"
+      # loopback-only: reachable through the SSH tunnel above, not from the network
+      - "127.0.0.1:8081:8081"
     depends_on:
       - mongo
     restart: unless-stopped

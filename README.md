@@ -20,7 +20,7 @@ This project's value is as much the findings as the code:
 | Intraday mean-reversion (RSI/Bollinger), LLM-driven | expectancy **−0.08%/trade**, PF 0.45, **−50%** | ❌ Guaranteed loser — churn + costs |
 | Daily **trend-following** (Donchian + SMA regime) | expectancy **+5.8%/trade**, PF **2.82**, Sharpe **2.41** | ✅ Real, regime-tested edge |
 | Small-account options (buying) | unbacktestable + 6.5% spreads + negative base rate | ❌ Doesn't fit; skipped |
-| News sentiment | not cleanly backtestable (lookahead) | ⚠️ Used only as a **risk filter**, evaluated forward |
+| News sentiment | not a backtestable *signal*; its cost as a veto is measurable ([eval harness](#eval-harness-does-the-news-filter-earn-its-veto)) | ⚠️ **Risk filter** only — must beat the ~58% base rate of blocking at random |
 
 **Conclusion baked into the system:** use a *deterministic, validated* signal for the
 trade decision, and the *LLM only where it has genuine edge* (synthesizing news/events).
@@ -61,6 +61,7 @@ Two agents run the **same image** with different config + identity:
 | --- | --- |
 | `src/trader/trend_trader.py` | **Live engine** — deterministic daily trend executor (current strategy) |
 | `src/trader/backtest/` | Backtester: `signals.py`, `engine.py` (mean-rev), `trend.py` (trend + `desired_long`), `metrics.py`, `run.py` |
+| `src/trader/eval/` | **Eval harness** for the LLM news filter: `news_replay.py` (counterfactual A/B), `cache.py`, `run.py` |
 | `src/trader/news.py` | News fetch (Alpaca/Benzinga) + Claude sentiment scoring + veto logic |
 | `src/trader/indicators.py` | Deterministic indicators (RSI/Bollinger/EMA/VWAP/MACD/Donchian) |
 | `src/trader/market_data.py` | alpaca-py wrappers: bars, history, account, orders, liquidation |
@@ -115,6 +116,50 @@ total return, max drawdown, Sharpe, vs buy-and-hold.
 
 ---
 
+## Eval harness (does the news filter earn its veto?)
+
+The trend engine is backtested; the **LLM was not**. `trader.eval` closes that gap by
+replaying history twice through the *same* simulator — once unfiltered, once with the
+live prompt scoring point-in-time headlines and the live `should_block` thresholds:
+
+```bash
+# what would this cost? (offline, no LLM calls)
+PYTHONPATH=src TRADER_CONFIG_DIR=config/equity \
+  python -m trader.eval.run --days 1500 --plan
+
+# the real thing; verdicts are cached to .eval-cache/ so re-runs are free
+PYTHONPATH=src TRADER_CONFIG_DIR=config/equity \
+  python -m trader.eval.run --days 1500 --out eval-news.json
+```
+
+Reports baseline-vs-filtered expectancy / PF / drawdown / Sharpe, plus **block
+precision** — the share of blocks that landed on a trade that would have lost.
+
+Why precision and not accuracy: the filter can only *block*. A false positive kills a
+trade drawn from a **+5.8% expectancy** distribution; a false negative just returns
+you to baseline. Blocking at random already scores ~58% (the base loss rate), so a
+filter has to beat that to be worth anything.
+
+**Reading the output.** The realized cost of the filter is the **expectancy/return
+delta**, not the sum of the blocked trades' returns — a veto usually *delays* an entry
+(the trend signal is re-evaluated the next day) rather than cancelling it, so most of
+the move is recaptured. The report labels each block `re-entered later` vs
+`leg abandoned` for exactly this reason.
+
+**Contamination, stated plainly:** the model knows how these dates turned out. That
+biases the filter toward looking good, so read a poor result as a *lower bound* on
+how poor it is, and don't treat a good result as proof of an edge.
+
+Cache keys include the prompt version and model, so **changing the prompt invalidates
+every verdict** — that is the regression signal. Bump `PROMPT_VERSION` in
+`src/trader/news.py` whenever `_SYSTEM` changes.
+
+The live path is instrumented to feed this: each tick's journal `news` entries now
+record the `headlines`, `model`, and `prompt_version` behind every verdict, so
+production decisions can be re-scored against a future prompt.
+
+---
+
 ## Risk controls
 
 - **Position size cap** — max % of equity per position (`risk.yaml`).
@@ -166,7 +211,7 @@ docker compose --profile crypto up -d agent-crypto
 
 ```bash
 pip install -e ".[dev]"   # or: pip install pytest pytest-asyncio fakeredis ...
-pytest                    # 48 tests: indicators, risk gate, drawdown, backtest, news filter
+pytest                    # 70 tests: indicators, risk gate, drawdown, backtest, news filter, eval harness
 ```
 Tests need no network/Alpaca/Redis/Mongo (LLM and data calls are stubbed).
 
@@ -194,8 +239,9 @@ Tests need no network/Alpaca/Redis/Mongo (LLM and data calls are stubbed).
   universe + walk-forward.
 - Fractional positions have **no resting stops** (managed on ticks during market
   hours) → **overnight/gap risk**.
-- **News "alpha" is not backtestable** — it's a risk filter evaluated *forward* via the
-  journal (`news` field: entered vs blocked outcomes), not a proven signal.
+- **News "alpha" is not a proven signal** — it's a risk filter. Its *cost* is now
+  measurable offline (`trader.eval`, above), but the measurement is contaminated by
+  the model's hindsight, so it bounds the damage rather than proving an edge.
 - Beating buy-and-hold consistently is hard; the realistic win here is *similar return
   with much lower drawdown/exposure*, plus a framework to keep testing.
 

@@ -27,6 +27,7 @@ dev = [
 [project.scripts]
 trader = "trader.main:main"
 trader-backtest = "trader.backtest.run:main"
+trader-eval = "trader.eval.run:main"
 
 [build-system]
 requires = ["hatchling"]

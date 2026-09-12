@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design — Project 10X</title>
+<meta name="description" content="System design: components, data flow, the tick walked step by step, and three independent risk layers.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<nav class="sitenav">
+  <div class="sitenav-inner">
+    <a class="brand" href="index.html">Project <span>10X</span></a>
+    <a class="nl" href="index.html">Overview</a>
+    <a class="nl" href="approach.html">Approach</a>
+    <a class="nl" href="design.html" aria-current="page">Design</a>
+    <a class="nl" href="evals.html">Evals</a>
+    <a class="nl" href="results.html">Results</a>
+  </div>
+</nav>
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">02 — Design</p>
+    <h1>System design</h1>
+    <p class="standfirst">One long-running Python process, one Alpaca paper account, a Redis
+    instance for day state and a Mongo collection for the audit trail. The interesting part is
+    not the topology — it is where the boundaries fall.</p>
+
+    <dl class="facts">
+      <div class="fact"><dt>Lines of Python</dt><dd>3,136</dd></div>
+      <div class="fact"><dt>Modules</dt><dd>22</dd></div>
+      <div class="fact"><dt>Tests</dt><dd>67</dd></div>
+      <div class="fact"><dt>Watchlist</dt><dd>30</dd></div>
+      <div class="fact"><dt>Tick interval</dt><dd>60 min</dd></div>
+    </dl>
+  </header>
+
+  <section id="shape">
+    <h2>The shape of it</h2>
+    <div class="col">
+      <p>Four files carry the system: <code>trend_trader.py</code> is the live engine,
+      <code>news.py</code> is the only LLM component, <code>backtest/trend.py</code> holds the
+      strategy shared by live and simulation, and <code>eval/news_replay.py</code> prices the
+      model. Everything else is plumbing or history.</p>
+    </div>
+
+    <figure>
+      <div class="svg-frame">
+        <svg viewBox="0 0 960 564" role="img" aria-labelledby="arch-t arch-d">
+          <title id="arch-t">Project 10X architecture</title>
+          <desc id="arch-d">Daily bars feed a deterministic Donchian signal, which reconciles
+          holdings. Entries pass through a Claude news veto and then hard risk caps before
+          reaching Alpaca. Redis holds day state; Mongo holds the audit trail.</desc>
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5"
+                    markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" opacity=".55"/>
+            </marker>
+          </defs>
+          <g font-family="IBM Plex Sans, system-ui, sans-serif" fill="currentColor">
+
+            <!-- main spine -->
+            <g>
+              <rect x="40" y="20" width="420" height="56" rx="3" fill="var(--surface)"
+                    stroke="currentColor" stroke-opacity=".22"/>
+              <text x="60" y="43" font-size="13.5" font-weight="500">Alpaca daily bars</text>
+              <text x="60" y="61" font-size="11.5" opacity=".6"
+                    font-family="IBM Plex Mono, monospace">1Day · 400d · adjustment=ALL</text>
+            </g>
+
+            <g>
+              <rect x="40" y="108" width="420" height="56" rx="3" fill="var(--accent-bg)"
+                    class="dg-a-s" stroke-width="1.5"/>
+              <text x="60" y="131" font-size="13.5" font-weight="600" class="dg-a-f">desired_long() — deterministic</text>
+              <text x="60" y="149" font-size="11.5" class="dg-a-f" opacity=".8"
+                    font-family="IBM Plex Mono, monospace">Donchian 50 high · SMA 100 regime · no LLM</text>
+            </g>
+
+            <g>
+              <rect x="40" y="196" width="420" height="56" rx="3" fill="var(--surface)"
+                    stroke="currentColor" stroke-opacity=".22"/>
+              <text x="60" y="219" font-size="13.5" font-weight="500">Reconcile holdings</text>
+              <text x="60" y="237" font-size="11.5" opacity=".6"
+                    font-family="IBM Plex Mono, monospace">enter · hold · exit · cat_stop</text>
+            </g>
+
+            <g>
+              <rect x="40" y="284" width="420" height="56" rx="3" fill="var(--surface)"
+                    stroke="currentColor" stroke-opacity=".22"/>
+              <text x="60" y="307" font-size="13.5" font-weight="500">News veto — Claude</text>
+              <text x="60" y="325" font-size="11.5" opacity=".6"
+                    font-family="IBM Plex Mono, monospace">entries only · block never initiate · fail-open</text>
+            </g>
+
+            <g>
+              <rect x="40" y="372" width="420" height="56" rx="3" fill="var(--surface)"
+                    stroke="currentColor" stroke-opacity=".22"/>
+              <text x="60" y="395" font-size="13.5" font-weight="500">Hard risk caps</text>
+              <text x="60" y="413" font-size="11.5" opacity=".6"
+                    font-family="IBM Plex Mono, monospace">10% size · 10 positions · whitelist · drawdown pause</text>
+            </g>
+
+            <g>
+              <rect x="40" y="460" width="420" height="56" rx="3" fill="var(--surface)"
+                    stroke="currentColor" stroke-opacity=".22"/>
+              <text x="60" y="483" font-size="13.5" font-weight="500">Alpaca paper orders</text>
+              <text x="60" y="501" font-size="11.5" opacity=".6"
+                    font-family="IBM Plex Mono, monospace">notional · long-only · fractional</text>
+            </g>
+
+            <!-- spine arrows -->
+            <g stroke="currentColor" stroke-opacity=".5" stroke-width="1.4" marker-end="url(#ah)">
+              <line x1="250" y1="76"  x2="250" y2="104"/>
+              <line x1="250" y1="164" x2="250" y2="192"/>
+              <line x1="250" y1="252" x2="250" y2="280"/>
+              <line x1="250" y1="340" x2="250" y2="368"/>
+              <line x1="250" y1="428" x2="250" y2="456"/>
+            </g>
+
+            <!-- right column -->
+            <g>
+              <rect x="580" y="284" width="340" height="56" rx="3" fill="var(--surface)"
+                    stroke="currentColor" stroke-opacity=".22"/>
+              <text x="600" y="307" font-size="13.5" font-weight="500">Alpaca / Benzinga news</text>
+              <text x="600" y="325" font-size="11.5" opacity=".6"
+                    font-family="IBM Plex Mono, monospace">48h window · 15 headlines</text>
+            </g>
+            <g>
+              <rect x="580" y="372" width="340" height="56" rx="3" fill="var(--surface)"
+                    stroke="currentColor" stroke-opacity=".22"/>
+              <text x="600" y="395" font-size="13.5" font-weight="500">Redis — day state</text>
+              <text x="600" y="413" font-size="11.5" opacity=".6"
+                    font-family="IBM Plex Mono, monospace">anchor · paused · sentiment TTL</text>
+            </g>
+            <g>
+              <rect x="580" y="460" width="340" height="56" rx="3" fill="var(--surface)"
+                    stroke="currentColor" stroke-opacity=".22"/>
+              <text x="600" y="483" font-size="13.5" font-weight="500">Mongo — audit trail</text>
+              <text x="600" y="501" font-size="11.5" opacity=".6"
+                    font-family="IBM Plex Mono, monospace">one document per tick</text>
+            </g>
+
+            <!-- cross arrows -->
+            <g stroke="currentColor" stroke-opacity=".5" stroke-width="1.4" marker-end="url(#ah)">
+              <line x1="576" y1="312" x2="464" y2="312"/>
+              <line x1="576" y1="400" x2="464" y2="400"/>
+              <line x1="464" y1="488" x2="576" y2="488"/>
+            </g>
+
+            <!-- scheduler bracket -->
+            <g stroke="currentColor" stroke-opacity=".28" stroke-width="1.2" fill="none">
+              <path d="M 30 48 L 16 48 L 16 224 L 30 224"/>
+            </g>
+            <text x="8" y="140" font-size="11" opacity=".55" transform="rotate(-90 8 140)"
+                  text-anchor="middle" font-family="IBM Plex Mono, monospace">hourly tick</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption>The spine is deterministic top to bottom; the only model call sits on the
+      entry branch, and it can only stop the flow. Redis carries state that must survive a
+      restart within a trading day; Mongo carries everything, forever.</figcaption>
+    </figure>
+  </section>
+
+  <section id="tick">
+    <h2>One tick, step by step</h2>
+    <div class="col">
+      <p>The live engine is a single function, <code>TrendTrader.run_tick()</code>, and it reads
+      top to bottom. It fires hourly during market hours.</p>
+    </div>
+
+    <h4>Step 1 — account and drawdown, before anything else</h4>
+    <div class="col">
+      <p>Equity is fetched, then the drawdown monitor reads today's <em>anchor</em> from Redis,
+      keyed by UTC date. If no anchor exists, this equity becomes it. If equity has fallen past
+      the limit and the switch has not already tripped, it liquidates and latches a pause flag
+      for the rest of the day.</p>
+      <p>The latch is the important detail: liquidation fires <strong>once</strong>, not on every
+      subsequent tick. And the liquidation function is injected as a closure scoped to this
+      agent's own symbols, so one agent's kill-switch can never touch another's book.</p>
+    </div>
+
+    <h4>Step 2 — reconcile, don't re-decide</h4>
+    <div class="col">
+      <p>For each of 30 symbols the engine computes two booleans — <code>want_long</code> from
+      the trend signal, and <code>holding</code> from the broker — and reconciles them. That is
+      the entire decision surface.</p>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <caption>The whole strategy, as a truth table. Note that a paused drawdown forces
+        <code>want_long</code> false for every symbol — so entries stop, but exits never do.</caption>
+        <thead>
+          <tr><th>Holding</th><th>Want long</th><th>Action</th><th>Reason code</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>yes</td><td>—</td><td>SELL if price ≤ entry × 0.80</td><td class="mono">cat_stop</td></tr>
+          <tr><td>yes</td><td>no</td><td>SELL</td><td class="mono">trend_break</td></tr>
+          <tr><td>yes</td><td>yes</td><td>hold — no order</td><td class="mono">—</td></tr>
+          <tr><td>no</td><td>yes</td><td>BUY, subject to slots + veto + cash</td><td class="mono">BUY / BLOCKED / SKIP</td></tr>
+          <tr><td>no</td><td>no</td><td>nothing</td><td class="mono">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <span class="label">Why reconciliation, not events</span>
+      <p>Because this compares states rather than reacting to transitions, the engine is
+      idempotent. A tick that crashes halfway leaves nothing to repair — the next tick
+      recomputes from scratch and converges. There is no pending-order state machine to
+      corrupt, and no position memory to persist.</p>
+    </div>
+
+    <h4>Step 3 — sizing, and the cash trap</h4>
+    <div class="col">
+      <p>Target size is 10% of <em>equity</em>, but only <em>cash</em> can be spent. The engine
+      takes the minimum of the two and keeps a 2% buffer, because a market notional order can
+      fill slightly above the quote and without the buffer the last position of the day bounces
+      on insufficient buying power. Anything under $20 is skipped as dust.</p>
+    </div>
+
+    <h4>Step 4 — journal everything</h4>
+    <div class="col">
+      <p>One Mongo document per tick, carrying every action taken and the
+      <code>want_long</code> / <code>holding</code> / <code>price</code> triple for all 30
+      symbols. This is what lets you reconstruct why <em>nothing</em> happened on a quiet day,
+      which is most days — a trend system trades rarely by design.</p>
+      <p>Crucially, each news verdict is journaled alongside the headlines that produced it, the
+      model name, and the prompt version. Without the input, a stored verdict cannot be
+      re-scored against a future prompt, and the production log is useless as an eval corpus.</p>
+    </div>
+  </section>
+
+  <section id="state-read">
+    <h2>The trick that makes it all work</h2>
+    <div class="col">
+      <p><code>desired_long()</code> does not ask "did a breakout happen today". It asks whether
+      the most recent breakout is more recent than the most recent breakdown — a read of current
+      trend <em>state</em>.</p>
+    </div>
+
+    <div class="code">
+<pre>entries = close &gt; prior_high
+exits   = close &lt; prior_low
+last_entry = entries[entries].index.max()
+last_exit  = exits[exits].index.max()
+in_trend = last_exit is None or last_entry &gt; last_exit</pre>
+    </div>
+
+    <div class="col">
+      <p>Two consequences fall out, and both are load-bearing.</p>
+      <p><strong>The live engine needs no memory.</strong> Restart it, redeploy it, run it in a
+      fresh container — it recomputes the same answer from history. Nothing to persist, no
+      missed-event risk.</p>
+      <p><strong>A veto degrades gracefully.</strong> Because the answer is a state rather than
+      an event, a block today simply means the engine asks again tomorrow while the trend leg is
+      still alive. A veto <em>delays</em> an entry rather than cancelling it — which is precisely
+      why the eval's cost accounting can be honest. <a href="evals.html#attribution">That
+      matters enormously later</a>.</p>
+    </div>
+  </section>
+
+  <section id="risk">
+    <h2>Risk, in three independent layers</h2>
+
+    <h3>Layer 1 — config caps, checked inline</h3>
+    <div class="table-wrap">
+      <table>
+        <caption>From <code>config/equity/risk.yaml</code>, sized for a ~$1,000 account.</caption>
+        <thead><tr><th>Setting</th><th class="n">Value</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">max_position_pct</td><td class="n">0.10</td><td>~$100 per position</td></tr>
+          <tr><td class="mono">max_open_positions</td><td class="n">10</td><td>full deployment across 30 names</td></tr>
+          <tr><td class="mono">daily_drawdown_pct</td><td class="n">0.10</td><td>liquidate + pause for the day</td></tr>
+          <tr><td class="mono">long_only</td><td class="n">true</td><td>no short path exists in the engine</td></tr>
+          <tr><td class="mono">require_stop_loss</td><td class="n">false</td><td>see the caveat below</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <span class="label">An honest caveat</span>
+      <p><code>require_stop_loss: false</code> is not laziness. Fractional equity orders cannot
+      carry Alpaca bracket orders, and on a $1,000 account every position is fractional.
+      There is therefore <strong>no resting stop at the broker</strong> — exits are managed by
+      the engine on ticks, which means overnight and weekend gap risk is real and unhedged.</p>
+    </div>
+
+    <h3>Layer 2 — the drawdown kill-switch</h3>
+    <div class="col">
+      <p>Date-keyed in Redis, latching, scoped to one agent's symbols, and asymmetric: it blocks
+      entries while permitting exits. Its known failure mode is documented rather than hidden —
+      change the account balance mid-session and the anchor is stale, so the next tick reads a
+      false drawdown and liquidates. Recovery is manual: clear the anchor and pause keys, then
+      restart.</p>
+    </div>
+
+    <h3>Layer 3 — the <code>PreToolUse</code> gate</h3>
+    <div class="col">
+      <p>This layer is dormant with the LLM path, but it is the most reusable idea in the
+      repository, because it answers a question every agentic system eventually faces:
+      <strong>how do you stop a model taking an action you did not sanction?</strong></p>
+      <p>The answer is not prompt instructions. It is a hook registered against the tool name
+      that intercepts the call before it reaches the server and can deny it outright.</p>
+    </div>
+
+    <div class="code">
+<pre>hooks={"PreToolUse": [
+    HookMatcher(matcher="mcp__alpaca__place_.*", hooks=[risk_hook]),
+    HookMatcher(matcher="mcp__alpaca__close_.*", hooks=[risk_hook]),
+]}</pre>
+    </div>
+
+    <div class="col">
+      <p>The decision logic behind it, <code>evaluate_order()</code>, is a <em>pure function</em>
+      — no SDK types, no I/O — so it is directly unit-testable, and 14 tests cover it. Its checks
+      run in order: risk-reducing operations always pass; then paused, long-only violation,
+      missing symbol, whitelist, stop-loss present, stop distance, position count, notional
+      resolvable, notional cap. Every decision is recorded with its reason, so a denial is
+      visible after the fact.</p>
+    </div>
+
+    <div class="note">
+      <span class="label">Scar tissue worth reading</span>
+      <p>The first version of the stop-loss extractor only understood a nested
+      <code>stop_loss</code> shape, but the real Alpaca MCP tool uses flat keys like
+      <code>stop_loss_stop_price</code>. The hook therefore denied <em>every</em> bracket order
+      and would have blocked every trade forever. It was caught by the first real order and now
+      has a regression test. The general lesson: a fail-closed gate that misreads its input
+      fails silently and totally.</p>
+    </div>
+  </section>
+
+  <section id="ops">
+    <h2>Deployment</h2>
+    <div class="col">
+      <p>Five Docker services, three of them profile-gated and off by default. The live agent,
+      Redis and Mongo come up on a plain <code>docker compose up -d</code>. The crypto agent, the
+      MCP server and the Mongo web UI each require an explicit profile flag.</p>
+      <p>The <code>config/</code> directory is volume-mounted, so parameter tuning is a restart
+      rather than a rebuild. Claude authenticates with a subscription OAuth token rather than an
+      API key, and Compose deliberately blanks <code>ANTHROPIC_API_KEY</code> so a stray key
+      cannot silently override it.</p>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Service</th><th>State</th><th>Note</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">agent-equity</td><td><span class="pill live">on</span></td><td>the live agent</td></tr>
+          <tr><td class="mono">redis · mongo</td><td><span class="pill live">on</span></td><td>day state + audit trail</td></tr>
+          <tr><td class="mono">agent-crypto</td><td><span class="pill">profile</span></td><td>paused — paper does not fill crypto</td></tr>
+          <tr><td class="mono">alpaca-mcp</td><td><span class="pill">profile</span></td><td>only the dormant LLM mode needs it</td></tr>
+          <tr><td class="mono">mongo-express</td><td><span class="pill">profile</span></td><td>loopback-bound; tunnel it</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="pager">
+    <a href="approach.html">← Approach</a>
+    <a href="evals.html">Evals →</a>
+  </div>
+
+  <footer>
+    <p>Project 10X · paper trading only · engineering write-up, not financial advice.</p>
+  </footer>
+
+</div>
+</body>
+</html>

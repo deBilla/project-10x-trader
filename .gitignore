@@ -27,6 +27,12 @@ venv/
 *.log
 mongo_data/
 *.sqlite
+# Cached LLM verdicts from the news-filter eval. Machine-regenerable and large;
+# delete it to force a full re-score.
+.eval-cache/
+
+# --- local agent/editor state (not shared across clones) ---
+.claude/settings.local.json
 
 # --- os / editor ---
 .DS_Store

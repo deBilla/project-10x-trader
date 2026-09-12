@@ -62,7 +62,19 @@ def backtest_trend(
     use_regime_filter: bool = True,
     cat_stop_pct: float = 0.20,
     slippage_pct: float = 0.0005,
+    veto=None,
 ) -> list[Trade]:
+    """`veto` is an optional `fn(symbol, decision_ts) -> bool` consulted before each
+    entry — the offline hook for the news risk-filter (see `trader.eval`). It is
+    called at the decision bar's *close*, so an implementation must only look at
+    information available strictly before that timestamp.
+
+    A vetoed entry is retried on subsequent bars for as long as the trend leg stays
+    valid, mirroring live behaviour: `desired_long` is a state read, so a block today
+    means the agent tries again tomorrow rather than abandoning the leg. With
+    `veto=None` this retry branch is unreachable and the simulation is unchanged —
+    that identity is what makes the filtered/unfiltered comparison an honest A/B.
+    """
     bars = bars.sort_index()
     n = len(bars)
     start = max(entry_channel, exit_channel, trend_ma if use_regime_filter else 0) + 1
@@ -83,6 +95,7 @@ def backtest_trend(
     trades: list[Trade] = []
     pos = None
     pending = None  # "enter" | "exit"
+    deferred = False  # trend leg live but entry vetoed — retry while it stays valid
 
     for i in range(start, n):
         # Execute the action decided on the prior close, at this bar's open.
@@ -111,9 +124,16 @@ def backtest_trend(
         if pos is None:
             breakout = close[i] > prior_high[i]
             regime_ok = (not use_regime_filter) or (close[i] > sma[i])
-            if breakout and regime_ok:
-                pending = "enter"
+            if close[i] < prior_low[i]:
+                deferred = False  # leg is over; stop retrying a vetoed entry
+            if (breakout or deferred) and regime_ok:
+                if veto is not None and veto(symbol, idx[i]):
+                    deferred = True
+                else:
+                    deferred = False
+                    pending = "enter"
         else:
+            deferred = False
             if close[i] < prior_low[i]:
                 pending = "exit"
 

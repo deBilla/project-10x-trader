@@ -84,20 +84,37 @@ class TrendTrader:
                     if self._news is not None:
                         sent = await self._news.assess(sym)
                         blocked, reason = self._news.should_block(sent)
+                        # `headlines` + provenance are recorded so this tick can be
+                        # replayed against a future prompt/model (see trader.eval).
                         news_log.append({"symbol": sym, "label": sent.label,
                                          "confidence": sent.confidence,
                                          "earnings_imminent": sent.earnings_imminent,
                                          "rationale": sent.rationale,
+                                         "headlines": sent.headlines,
+                                         "model": sent.model,
+                                         "prompt_version": sent.prompt_version,
+                                         "ref_price": round(float(bars["close"].iloc[-1]), 4),
                                          "decision": "blocked" if blocked else "entered"})
                         if blocked:
                             log.info("[%s] BLOCKED %s entry — %s", name, sym, reason)
                             actions.append({"action": "BLOCKED", "symbol": sym, "reason": reason})
                     if not blocked:
-                        notional = round(cfg.risk.max_position_pct * acct.equity, 2)
-                        oid = self._market.submit_notional_buy(sym, notional)
-                        order_ids.append(oid)
-                        open_syms.append(sym)
-                        actions.append({"action": "BUY", "symbol": sym, "notional": notional})
+                        # Target size is a % of equity, but we can only spend free
+                        # cash. Cap at cash (2% buffer for slippage on market notional
+                        # orders) so the final slot fills instead of bouncing on
+                        # "insufficient buying power". Skip dust-sized entries.
+                        target = round(cfg.risk.max_position_pct * acct.equity, 2)
+                        notional = min(target, round(acct.cash * 0.98, 2))
+                        if notional < 20:
+                            log.info("[%s] SKIP %s entry — only $%.2f cash free",
+                                     name, sym, acct.cash)
+                            actions.append({"action": "SKIP", "symbol": sym,
+                                            "reason": f"insufficient cash (${acct.cash:.2f})"})
+                        else:
+                            oid = self._market.submit_notional_buy(sym, notional)
+                            order_ids.append(oid)
+                            open_syms.append(sym)
+                            actions.append({"action": "BUY", "symbol": sym, "notional": notional})
             except Exception as exc:  # noqa: BLE001
                 log.warning("[%s] order failed %s: %s", name, sym, exc)
                 actions.append({"action": "ERROR", "symbol": sym, "error": str(exc)})

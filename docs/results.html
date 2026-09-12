@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Results — Project 10X</title>
+<meta name="description" content="Every measured number in one place, what each does and does not support, and an unhedged list of what is still wrong.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<nav class="sitenav">
+  <div class="sitenav-inner">
+    <a class="brand" href="index.html">Project <span>10X</span></a>
+    <a class="nl" href="index.html">Overview</a>
+    <a class="nl" href="approach.html">Approach</a>
+    <a class="nl" href="design.html">Design</a>
+    <a class="nl" href="evals.html">Evals</a>
+    <a class="nl" href="results.html" aria-current="page">Results</a>
+  </div>
+</nav>
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">04 — Results</p>
+    <h1>What was actually achieved</h1>
+    <p class="standfirst">Two things: a trading system with a measured positive expectancy on
+    paper, and — more durably — a pair of harnesses that can tell whether any future change to it
+    is an improvement. The second is the one worth having.</p>
+  </header>
+
+  <section id="scoreboard">
+    <h2>The scoreboard</h2>
+    <div class="table-wrap">
+      <table>
+        <caption>Every approach tried, with its measured outcome. Sources:
+        <code>CHANGELOG.md</code> and <code>eval-news.json</code>.</caption>
+        <thead>
+          <tr><th>Approach</th><th>Measured result</th><th>Verdict</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Intraday mean-reversion (RSI / Bollinger), LLM-driven</td>
+            <td class="mono neg">−0.08%/trade · PF 0.45 · ≈−50%</td>
+            <td><span class="pill killed">killed</span></td>
+          </tr>
+          <tr>
+            <td>Daily trend-following, 12 symbols</td>
+            <td class="mono pos">+7.7%/trade · PF ~3 · Sharpe ~1.8</td>
+            <td><span class="pill ok">edge found</span></td>
+          </tr>
+          <tr class="hi">
+            <td>Daily trend-following, 30 symbols <strong>(live)</strong></td>
+            <td class="mono pos">+5.5%/trade · PF 2.71 · Sharpe 2.45 · DD 12.4%</td>
+            <td><span class="pill live">shipped</span></td>
+          </tr>
+          <tr>
+            <td>Small-account options</td>
+            <td class="mono">unbacktestable · ~6.5% spreads</td>
+            <td><span class="pill killed">declined</span></td>
+          </tr>
+          <tr>
+            <td>News sentiment as a directional signal</td>
+            <td class="mono">not backtestable · latency-bound</td>
+            <td><span class="pill killed">never built</span></td>
+          </tr>
+          <tr>
+            <td>News sentiment as an entry veto</td>
+            <td class="mono">+0.03pp expectancy · precision 63.6% vs 44.7% (p≈0.17)</td>
+            <td><span class="pill">kept, not expanded</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="col">
+      <p>The 12-symbol and 30-symbol trend numbers differ because the universe changed, not
+      because the strategy did. Broadening from 12 to 30 names lowered per-trade expectancy from
+      7.7% to 5.5% while raising Sharpe from ~1.8 to 2.45 and holding max drawdown near 9–12%.
+      That is diversification doing exactly what it is supposed to do: less return per bet, more
+      return per unit of risk.</p>
+      <p>It also partly answers the survivorship objection. The re-test held up
+      <em>including its losers</em> — TSLA, UNH and V all lost money in the window and the
+      portfolio edge survived them.</p>
+    </div>
+  </section>
+
+  <section id="live-shape">
+    <h2>The shape of the live strategy</h2>
+    <dl class="kpis">
+      <div class="kpi"><div class="k">Win rate</div><div class="v">55.3%</div>
+        <div class="s">141 winners of 255</div></div>
+      <div class="kpi"><div class="k">Average win</div><div class="v pos">+15.8%</div>
+        <div class="s">no take-profit — winners run</div></div>
+      <div class="kpi"><div class="k">Average loss</div><div class="v neg">−7.2%</div>
+        <div class="s">channel exit, not the 20% stop</div></div>
+      <div class="kpi"><div class="k">Avg hold</div><div class="v">51</div>
+        <div class="s">daily bars ≈ 10 weeks</div></div>
+    </dl>
+
+    <div class="col">
+      <p>This is the canonical trend-following profile and it is worth reading carefully, because
+      it explains every design choice upstream of it. The win rate is barely better than a coin
+      flip. The edge lives entirely in the <strong>2.2:1 ratio between average win and average
+      loss</strong> — which exists only because there is no take-profit and the exit is a
+      trailing channel.</p>
+      <p>Two implications follow. First, capping winners would destroy the edge, which is why
+      the strategy has no profit target at all. Second, a system like this trades rarely — 255
+      trades across 30 symbols over roughly four years is about two per symbol per year. Activity
+      is not the goal, and the long stretches where the journal records nothing are the strategy
+      working.</p>
+    </div>
+
+    <div class="note">
+      <span class="label">Why the 20% catastrophic stop almost never fires</span>
+      <p>Average loss is 7.2% against a 20% stop. The trailing channel exit is nearly always
+      faster, which means the wide stop is a backstop against an overnight gap rather than a
+      strategy parameter. That is deliberate — a tight stop on a multi-week trend system just
+      converts winners into losers via noise.</p>
+    </div>
+  </section>
+
+  <section id="engineering">
+    <h2>What was achieved on the engineering side</h2>
+
+    <div class="cards">
+      <div class="card">
+        <div class="k">Reproducible edge</div>
+        <h3>One strategy definition, two consumers</h3>
+        <p><code>desired_long()</code> is called by both the live engine and the backtester. There
+        is no separate live implementation to drift from the tested one — the thing measured is
+        literally the thing that runs.</p>
+      </div>
+      <div class="card">
+        <div class="k">Model isolation</div>
+        <h3>An LLM that cannot exceed its brief</h3>
+        <p>The news component has no code path that increases risk. No prompt injection, jailbreak
+        or malformed response can open a position, raise a limit or skip a stop, because those
+        branches do not exist.</p>
+      </div>
+      <div class="card">
+        <div class="k">Auditability</div>
+        <h3>Decisions replayable months later</h3>
+        <p>Every tick's document carries the headlines, model and prompt version behind each
+        verdict. Production decisions can be re-scored against a future prompt — the journal is
+        an eval corpus, not just a log.</p>
+      </div>
+      <div class="card">
+        <div class="k">Falsifiability</div>
+        <h3>Harnesses that can say no</h3>
+        <p>Both measurement tools returned unwelcome answers and both were acted on. A harness
+        that has never overruled its author is not evidence of a good strategy; it is evidence of
+        a decorative harness.</p>
+      </div>
+    </div>
+
+    <div class="col">
+      <p>Two reusable patterns came out of this that are not specific to trading. The
+      <code>PreToolUse</code> gate is a general answer to constraining an agent's actions:
+      intercept the tool call, evaluate it with a pure function, deny before it reaches the
+      server. And the counterfactual A/B is a general answer to valuing a model component that
+      can only subtract — run both arms through one simulator and diff the outcomes rather than
+      grading the classifier.</p>
+    </div>
+  </section>
+
+  <section id="claims">
+    <h2>What the numbers do and don't support</h2>
+
+    <div class="verdict yes">
+      <span class="label">Supported</span>
+      <p>That the daily Donchian strategy had positive expectancy net of modelled costs over this
+      universe and window. That the original intraday strategy did not, by a margin too large to
+      be sampling noise. That the news veto's cost is near zero. That the risk layer holds — no
+      limit has ever been breached by a model action in either mode.</p>
+    </div>
+
+    <div class="verdict no">
+      <span class="label">Not supported</span>
+      <p>That this makes money going forward. That the news filter has predictive edge — the eval
+      hints at it but n=11 cannot establish it. That the Sharpe figure is comparable to a fund's, since it is a
+      per-trade annualisation rather than a daily-returns Sharpe. That the strategy generalises
+      beyond liquid US mega-caps in a bull market, which is the only regime it has been
+      seriously tested in.</p>
+    </div>
+
+    <div class="col">
+      <p>The gap between those two boxes is the honest position: this project produced good
+      evidence about <em>which of its own components were worth building</em>, and weak evidence
+      about whether the result is profitable. Those are different claims and the second one needs
+      years of forward data, not a better backtest.</p>
+    </div>
+  </section>
+
+  <section id="wrong">
+    <h2>What is still wrong with it</h2>
+    <div class="col">
+      <p>Unhedged, because a write-up that lists only strengths is marketing.</p>
+    </div>
+
+    <h3>Measurement</h3>
+    <div class="col">
+      <ul>
+        <li>The trend edge was measured on <strong>mega-cap survivors in a bullish window</strong>
+        — the most flattering possible sample. Real validation needs out-of-sample data, a
+        delisted-inclusive universe, and walk-forward testing.</li>
+        <li>The eval's hindsight contamination is <strong>structural</strong>. No amount of
+        compute fixes it; only forward measurement on unseen dates does.</li>
+        <li>Sharpe is per-trade annualised, not daily-returns. Do not compare it to published
+        figures.</li>
+      </ul>
+    </div>
+
+    <h3>Live mechanics</h3>
+    <div class="col">
+      <ul>
+        <li><strong>No resting stops.</strong> Fractional positions cannot carry brackets, so
+        exits depend on the engine ticking. Overnight and weekend gap risk is unhedged.</li>
+        <li><strong>Stale drawdown anchor</strong> after a mid-session balance change trips a
+        false kill-switch, and recovery is manual Redis surgery.</li>
+        <li><strong>No liveness assertion</strong> that the scheduler interval actually fired.
+        The bug class that once left agents ticking only on restart would not be caught
+        automatically today.</li>
+        <li><strong>The trend engine does not cancel stale orders.</strong> The legacy LLM path
+        does; the reconciliation was never ported across.</li>
+        <li><strong>No startup reconciliation</strong> of broker positions against local
+        expectations.</li>
+        <li><code>cancel_all_orders</code> is exposed to the legacy agent but matches neither risk-hook
+        matcher, so the gate never sees it. Benign today — it would be allowed anyway — but the
+        code reads as though it is gated.</li>
+      </ul>
+    </div>
+
+    <h3>Structural</h3>
+    <div class="col">
+      <ul>
+        <li>Single process, single account. No horizontal story, and none needed.</li>
+        <li>The Alpaca MCP service is currently unbuildable from upstream <code>main</code>.</li>
+        <li>Beating buy-and-hold consistently is hard. The realistic win here is
+        <em>similar return at materially lower drawdown and exposure</em>, plus the framework to
+        keep testing.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="next">
+    <h2>Where it goes next</h2>
+    <div class="col">
+      <p>The measurement work points at an obvious ordering, and it is not "add more
+      strategies".</p>
+      <p><strong>Close the live-mechanics gaps first.</strong> Startup reconciliation, per-tick
+      stale-order cancellation in the trend path, a liveness assertion on the scheduler, and
+      anchor invalidation. These are small, they are known, and every one of them is a way the
+      system could lose money for reasons unrelated to whether the strategy is any good.</p>
+      <p><strong>Then earn the right to trust the edge.</strong> Walk-forward testing on a
+      universe that includes delisted names, and out-of-sample windows that include a genuine
+      bear regime. The current numbers are a hypothesis, not a result.</p>
+      <p><strong>Leave the news filter alone.</strong> The eval says it is worth approximately
+      nothing, measured generously. The correct response to that is not a better prompt — it is
+      to stop spending attention there until something changes.</p>
+    </div>
+
+    <div class="note">
+      <span class="label">The one-line summary</span>
+      <p>A project whose most valuable output was a measurement that told its author to delete
+      the thing he had just built — twice.</p>
+    </div>
+  </section>
+
+  <div class="pager">
+    <a href="evals.html">← Evals</a>
+    <a href="index.html">Overview →</a>
+  </div>
+
+  <footer>
+    <p>Project 10X · paper trading only, no real capital · this is an engineering write-up, not
+    financial advice. Automated trading can lose money quickly; the risk layer exists precisely
+    because the strategy might be wrong.</p>
+  </footer>
+
+</div>
+</body>
+</html>

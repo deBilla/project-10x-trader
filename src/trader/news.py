@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 from .config import NewsParams
@@ -27,6 +27,11 @@ _SYSTEM = (
     "earnings_imminent = the company reports earnings within ~3 trading days."
 )
 
+# Bump whenever _SYSTEM changes. Recorded on every Sentiment so the journal and the
+# offline eval cache can tell which prompt produced a label — without it you cannot
+# tell a prompt regression from a market regime change.
+PROMPT_VERSION = "v1"
+
 
 @dataclass
 class Sentiment:
@@ -35,6 +40,12 @@ class Sentiment:
     earnings_imminent: bool = False
     rationale: str = ""
     error: str | None = None
+    # Provenance — the model's *input* and which prompt/model produced the label.
+    # Without the headlines a stored verdict can never be re-scored against a new
+    # prompt, which makes the journal useless as an eval corpus.
+    headlines: list[str] = field(default_factory=list)
+    model: str = ""
+    prompt_version: str = ""
 
     @property
     def is_bearish(self) -> bool:
@@ -61,6 +72,28 @@ def parse_sentiment(text: str) -> Sentiment:
         return Sentiment(error=f"parse: {exc}")
 
 
+async def claude_score(symbol: str, headlines: list[str], model: str) -> Sentiment:
+    """Score one symbol's headlines with Claude. Module-level so the offline eval
+    harness can call it without constructing a NewsSentiment (which needs a cache
+    and a live Alpaca client)."""
+    from claude_agent_sdk import ClaudeAgentOptions, query
+
+    prompt = (
+        f"Ticker: {symbol}\nRecent headlines (newest first):\n"
+        + "\n".join(f"- {h}" for h in headlines[:15])
+    )
+    opts = ClaudeAgentOptions(system_prompt=_SYSTEM, max_turns=1, model=model)
+    parts: list[str] = []
+    async for msg in query(prompt=prompt, options=opts):
+        for b in getattr(msg, "content", []) or []:
+            if type(b).__name__ == "TextBlock":
+                parts.append(getattr(b, "text", ""))
+    sent = parse_sentiment("".join(parts))
+    sent.model = model
+    sent.prompt_version = PROMPT_VERSION
+    return sent
+
+
 class NewsSentiment:
     def __init__(self, cfg, cache, scorer=None):
         """`scorer` is an async fn(symbol, headlines)->Sentiment; defaults to Claude.
@@ -71,17 +104,24 @@ class NewsSentiment:
         self._scorer = scorer or self._claude_score
         self._news_client = None
 
-    def fetch_recent(self, symbol: str) -> list[str]:
-        from alpaca.data.historical.news import NewsClient
-        from alpaca.data.requests import NewsRequest
-
+    def _client(self):
         if self._news_client is None:
+            from alpaca.data.historical.news import NewsClient
+
             s = self._cfg.settings
             self._news_client = NewsClient(s.alpaca_api_key, s.alpaca_secret_key)
-        start = datetime.now(timezone.utc) - timedelta(hours=self._params.lookback_hours)
-        res = self._news_client.get_news(
-            NewsRequest(symbols=symbol, start=start, limit=15)
-        )
+        return self._news_client
+
+    def fetch_window(self, symbol: str, start: datetime, end: datetime | None = None,
+                     limit: int = 15) -> list[str]:
+        """Headlines published in [start, end). `end` bounds the window for offline
+        replay — a point-in-time read is the whole no-lookahead guarantee."""
+        from alpaca.data.requests import NewsRequest
+
+        kwargs = {"symbols": symbol, "start": start, "limit": limit}
+        if end is not None:
+            kwargs["end"] = end
+        res = self._client().get_news(NewsRequest(**kwargs))
         # Version-robust: newer alpaca-py exposes articles under .data['news'];
         # older versions had a .news attribute.
         arts = []
@@ -96,27 +136,19 @@ class NewsSentiment:
                 out.append(hl)
         return out
 
-    async def _claude_score(self, symbol: str, headlines: list[str]) -> Sentiment:
-        from claude_agent_sdk import ClaudeAgentOptions, query
+    def fetch_recent(self, symbol: str) -> list[str]:
+        start = datetime.now(timezone.utc) - timedelta(hours=self._params.lookback_hours)
+        return self.fetch_window(symbol, start)
 
-        prompt = (
-            f"Ticker: {symbol}\nRecent headlines (newest first):\n"
-            + "\n".join(f"- {h}" for h in headlines[:15])
-        )
-        opts = ClaudeAgentOptions(system_prompt=_SYSTEM, max_turns=1,
-                                  model=self._cfg.settings.trader_model)
-        parts: list[str] = []
-        async for msg in query(prompt=prompt, options=opts):
-            for b in getattr(msg, "content", []) or []:
-                if type(b).__name__ == "TextBlock":
-                    parts.append(getattr(b, "text", ""))
-        return parse_sentiment("".join(parts))
+    async def _claude_score(self, symbol: str, headlines: list[str]) -> Sentiment:
+        return await claude_score(symbol, headlines, self._cfg.settings.trader_model)
 
     async def assess(self, symbol: str) -> Sentiment:
         """Cached per-symbol sentiment. No headlines -> neutral. Errors fail open."""
         cached = self._cache.get_news_sentiment(symbol)
         if cached is not None:
             return Sentiment(**cached)
+        headlines: list[str] = []
         try:
             headlines = self.fetch_recent(symbol)
             if not headlines:
@@ -126,6 +158,12 @@ class NewsSentiment:
         except Exception as exc:  # noqa: BLE001 — fail open
             log.warning("news assess failed for %s: %s", symbol, exc)
             sent = Sentiment(error=str(exc))
+        # Record the input alongside the verdict so the journal is re-scorable.
+        sent.headlines = headlines
+        if not sent.prompt_version:
+            sent.prompt_version = PROMPT_VERSION
+        if not sent.model:
+            sent.model = self._cfg.settings.trader_model
         self._cache.set_news_sentiment(
             symbol, sent.__dict__, self._params.cache_ttl_minutes * 60
         )

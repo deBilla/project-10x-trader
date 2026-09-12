@@ -1,0 +1,1139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Building a counterfactual eval for an LLM news filter that can only block: why precision beats accuracy, and what the harness cannot tell you.">
+<title>Earning the Veto</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap">
+
+<style>
+  /* ---- tokens: light is the base set; both dark paths only redefine ---- */
+  :root {
+    --bg:        #F1F3F5;
+    --surface:   #FFFFFF;
+    --surface-2: #E7EBEE;
+    --text:      #151A20;
+    --muted:     #59636F;
+    --line:      #D5DBE0;
+    --line-soft: #E4E9ED;
+    --accent:    #9A4A06;
+    --accent-bg: #FBF0E2;
+    --pos:       #166534;
+    --neg:       #B0201C;
+    --shadow:    0 1px 2px rgba(21, 26, 32, .05), 0 8px 24px rgba(21, 26, 32, .05);
+
+    --serif: "Newsreader", ui-serif, Georgia, serif;
+    --sans:  "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --mono:  "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    --measure: 68ch;
+    --wide: 1080px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:        #0F1317;
+      --surface:   #161B21;
+      --surface-2: #1E252C;
+      --text:      #E5EAEF;
+      --muted:     #94A0AC;
+      --line:      #293138;
+      --line-soft: #212930;
+      --accent:    #EFA53A;
+      --accent-bg: #241B0E;
+      --pos:       #4ADE80;
+      --neg:       #F87171;
+      --shadow:    0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:        #0F1317;
+    --surface:   #161B21;
+    --surface-2: #1E252C;
+    --text:      #E5EAEF;
+    --muted:     #94A0AC;
+    --line:      #293138;
+    --line-soft: #212930;
+    --accent:    #EFA53A;
+    --accent-bg: #241B0E;
+    --pos:       #4ADE80;
+    --neg:       #F87171;
+    --shadow:    0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .3);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 16.5px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: var(--wide);
+    margin: 0 auto;
+    padding: 0 24px 96px;
+  }
+
+  /* prose column inside the wide track */
+  .col { max-width: var(--measure); }
+
+  /* ---------------- masthead ---------------- */
+  .masthead {
+    padding: 72px 0 40px;
+    border-bottom: 1px solid var(--line);
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 20px;
+  }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: clamp(2.6rem, 6vw, 4.1rem);
+    line-height: 1.02;
+    letter-spacing: -.022em;
+    text-wrap: balance;
+    margin: 0 0 22px;
+  }
+  .standfirst {
+    font-family: var(--serif);
+    font-size: clamp(1.12rem, 2.1vw, 1.36rem);
+    line-height: 1.5;
+    color: var(--muted);
+    max-width: 60ch;
+    margin: 0 0 36px;
+  }
+
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .fact {
+    flex: 1 1 150px;
+    padding: 14px 18px;
+    border-right: 1px solid var(--line-soft);
+  }
+  .fact:last-child { border-right: 0; }
+  .fact dt {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 4px;
+  }
+  .fact dd {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 1.02rem;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------------- sections ---------------- */
+  section { padding-top: 60px; }
+
+  h2 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: clamp(1.7rem, 3.3vw, 2.25rem);
+    line-height: 1.15;
+    letter-spacing: -.016em;
+    text-wrap: balance;
+    margin: 0 0 8px;
+    padding-top: 14px;
+    border-top: 2px solid var(--accent);
+    display: inline-block;
+  }
+  h3 {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 1.02rem;
+    letter-spacing: -.004em;
+    margin: 36px 0 10px;
+  }
+  h4 {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 11.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 30px 0 10px;
+  }
+
+  p { margin: 0 0 17px; max-width: var(--measure); }
+  ul, ol { max-width: var(--measure); padding-left: 1.2em; margin: 0 0 17px; }
+  li { margin-bottom: 8px; }
+  li::marker { color: var(--muted); }
+
+  a { color: var(--accent); text-underline-offset: 3px; }
+  a:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  strong { font-weight: 600; }
+  code {
+    font-family: var(--mono);
+    font-size: .88em;
+    background: var(--surface-2);
+    padding: .12em .38em;
+    border-radius: 3px;
+    word-break: break-word;
+  }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ---------------- callout ---------------- */
+  .note {
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    background: var(--surface);
+    border-radius: 0 3px 3px 0;
+    padding: 18px 22px;
+    margin: 26px 0;
+    max-width: var(--measure);
+  }
+  .note p:last-child { margin-bottom: 0; }
+  .note .label {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 7px;
+  }
+
+  /* ---------------- code ---------------- */
+  .code {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 16px 18px;
+    margin: 20px 0 24px;
+    overflow-x: auto;
+    box-shadow: var(--shadow);
+  }
+  .code pre {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 12.9px;
+    line-height: 1.72;
+    white-space: pre;
+  }
+  .code.wide { max-width: none; }
+  .c-dim  { color: var(--muted); }
+  .c-acc  { color: var(--accent); }
+  .c-pos  { color: var(--pos); }
+  .c-neg  { color: var(--neg); }
+  .c-str  { font-weight: 500; }
+
+  /* ---------------- tables ---------------- */
+  .table-wrap { overflow-x: auto; margin: 22px 0 26px; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 520px;
+    font-size: .93rem;
+  }
+  caption {
+    caption-side: bottom;
+    text-align: left;
+    color: var(--muted);
+    font-size: .85rem;
+    padding-top: 12px;
+    line-height: 1.5;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 14px 10px 0;
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: top;
+  }
+  thead th {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.mono, th.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  td.n { text-align: right; padding-right: 20px; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* ---------------- figures ---------------- */
+  /* diagram accent: driven by tokens via classes, because var() inside an SVG
+     presentation attribute is not reliably supported across engines */
+  .dg-a-f { fill: var(--accent); }
+  .dg-a-s { stroke: var(--accent); }
+
+  figure { margin: 30px 0 34px; max-width: none; }
+  figure svg { display: block; width: 100%; max-width: 100%; height: auto; color: var(--text); }
+  .svg-frame {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 22px 20px;
+    overflow-x: auto;
+    box-shadow: var(--shadow);
+  }
+  figcaption {
+    color: var(--muted);
+    font-size: .875rem;
+    line-height: 1.55;
+    margin-top: 12px;
+    max-width: 76ch;
+  }
+
+  /* ---------------- numbered findings ---------------- */
+  .finding {
+    display: grid;
+    grid-template-columns: 46px 1fr;
+    gap: 0 20px;
+    padding: 28px 0;
+    border-top: 1px solid var(--line);
+  }
+  .finding-n {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    padding-top: 5px;
+    font-variant-numeric: tabular-nums;
+  }
+  .finding h3 { margin-top: 0; font-size: 1.12rem; }
+  .finding > div > p:last-child { margin-bottom: 0; }
+
+  .swing {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 28px;
+    font-family: var(--mono);
+    font-size: .84rem;
+    font-variant-numeric: tabular-nums;
+    padding: 12px 0 4px;
+    color: var(--muted);
+  }
+  .swing b { color: var(--text); font-weight: 500; }
+
+  /* ---------------- file map ---------------- */
+  .files { border-top: 1px solid var(--line); }
+  .file-row {
+    display: grid;
+    grid-template-columns: minmax(210px, 300px) 1fr;
+    gap: 4px 24px;
+    padding: 13px 0;
+    border-bottom: 1px solid var(--line-soft);
+    align-items: baseline;
+  }
+  .file-row code {
+    background: none;
+    padding: 0;
+    font-size: .85rem;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .file-row span { color: var(--muted); font-size: .92rem; }
+  .tag {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 2px;
+    background: var(--accent-bg);
+    color: var(--accent);
+    margin-left: 8px;
+    white-space: nowrap;
+  }
+
+  footer {
+    margin-top: 72px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: .875rem;
+  }
+
+  @media (max-width: 620px) {
+    .finding { grid-template-columns: 1fr; gap: 4px; }
+    .file-row { grid-template-columns: 1fr; }
+    .fact { flex-basis: 50%; border-bottom: 1px solid var(--line-soft); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<nav class="sitenav">
+  <div class="sitenav-inner">
+    <a class="brand" href="index.html">Project <span>10X</span></a>
+    <a class="nl" href="index.html">Overview</a>
+    <a class="nl" href="approach.html">Approach</a>
+    <a class="nl" href="design.html">Design</a>
+    <a class="nl" href="evals.html">Evals</a>
+    <a class="nl" href="results.html">Results</a>
+    <a class="nl" href="evals.html" aria-current="page">Essay</a>
+  </div>
+</nav>
+
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">Project 10X · Eval Harness</p>
+    <h1>Earning the Veto</h1>
+    <p class="standfirst">
+      The trend engine was backtested for four years before it was trusted with a dollar.
+      The language model holding veto power over its entries had never been measured at all.
+      This is the harness that measures it — and what building it taught us about
+      measuring it honestly.
+    </p>
+    <dl class="facts">
+      <div class="fact"><dt>Suite</dt><dd>70 tests</dd></div>
+      <div class="fact"><dt>New modules</dt><dd>4</dd></div>
+      <div class="fact"><dt>Network in CI</dt><dd>none</dd></div>
+      <div class="fact"><dt>Scoring cost</dt><dd>−39×</dd></div>
+    </dl>
+  </header>
+
+  <!-- ============================================================ -->
+  <section id="gap">
+    <h2>The component nobody measured</h2>
+    <div class="col">
+      <p>
+        The system's governing rule is printed at the top of its README:
+        <em>never trade an unvalidated edge</em>. The daily trend strategy earns its place
+        under that rule — Donchian breakout, regime filter, four years of history,
+        <span class="num">+5.8%</span> expectancy per trade, profit factor
+        <span class="num">2.82</span>. Every parameter in <code>config/equity/strategy.yaml</code>
+        survived a backtest.
+      </p>
+      <p>
+        One component never did. Before any breakout entry, <code>NewsSentiment</code>
+        pulls recent headlines, has Claude score them to JSON, and <strong>vetoes the
+        entry</strong> if the news reads strongly bearish or earnings are imminent. It sits
+        directly in the path of the only validated edge in the system, and it had no
+        backtest, no golden set, no accuracy number — nothing.
+      </p>
+      <p>
+        The existing test file covered the plumbing thoroughly: tolerant JSON parsing,
+        threshold arithmetic, fail-open behaviour. It covered the model's judgment not at all.
+        That is the hole this harness fills.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="asymmetry">
+    <h2>Why blocks, not accuracy</h2>
+    <div class="col">
+      <p>
+        The filter can only <em>block</em>. It never initiates a trade — the validated
+        signal stays in charge. That single constraint decides what to measure, because
+        it makes the two error types cost wildly different amounts.
+      </p>
+    </div>
+
+    <div class="table-wrap col">
+      <table>
+        <thead>
+          <tr><th>Error</th><th>What happens</th><th>What it costs</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">False&nbsp;positive</td>
+            <td>Blocks an entry the trend signal wanted</td>
+            <td>A trade drawn from a <strong class="num">+5.8%</strong>-expectancy distribution</td>
+          </tr>
+          <tr>
+            <td class="mono">False&nbsp;negative</td>
+            <td>Allows an entry it should have stopped</td>
+            <td>Nothing beyond baseline — you are simply unfiltered</td>
+          </tr>
+        </tbody>
+      </table>
+      <caption>
+        The payoff is one-sided, so overall accuracy is the wrong summary statistic. A filter
+        that blocks nothing scores identically to the baseline and costs nothing; a filter
+        that blocks eagerly can only subtract.
+      </caption>
+    </div>
+
+    <div class="col">
+      <p>
+        So the harness reports <strong>block precision</strong>: of the entries the filter
+        stopped, what share would actually have lost money. And it reports that number
+        against its own base rate. On a strategy that wins roughly
+        <span class="num">55%</span> of its trades, <em>blocking at random</em> already
+        lands on a loser about <span class="num">45%</span> of the time. That, not
+        <span class="num">50%</span>, is the bar a news filter has to clear to be worth
+        the calls it costs — and it moves with the strategy's win rate, so it is computed
+        per run rather than hard-coded.
+      </p>
+    </div>
+
+    <div class="note col">
+      <span class="label">The question restated</span>
+      <p>
+        Not "is the classifier good at reading news." It is: <strong>do these specific
+        blocks, on these specific entries, leave the book better off than not blocking
+        at all.</strong>
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="method">
+    <h2>Method: two arms, one simulator</h2>
+    <div class="col">
+      <p>
+        The harness replays history twice and diffs the result. The critical discipline is
+        that both arms run through the <em>same</em> simulator — a reimplementation of the
+        strategy for the filtered arm would let ordinary code drift masquerade as a
+        finding.
+      </p>
+    </div>
+
+    <figure>
+      <div class="svg-frame">
+        <svg viewBox="0 0 1000 400" role="img"
+             aria-label="Daily bars feed two arms of the same backtest function. The baseline arm runs with no veto and produces baseline trades. The filtered arm passes a veto callback that scores point-in-time headlines with Claude and can block an entry, retrying on the next bar. Both arms feed a comparison of metrics and an attribution step.">
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5"
+                    markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+            </marker>
+            <marker id="ar-a" viewBox="0 0 10 10" refX="9" refY="5"
+                    markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" class="dg-a-f"/>
+            </marker>
+          </defs>
+
+          <!-- source -->
+          <rect x="16" y="160" width="128" height="62" rx="3" fill="none"
+                stroke="currentColor" stroke-width="1.4"/>
+          <text x="80" y="185" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="12.5" fill="currentColor">daily bars</text>
+          <text x="80" y="203" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="11" fill="currentColor" opacity=".62">1500d · 30 syms</text>
+
+          <!-- split lines -->
+          <path d="M 144 191 L 178 191 L 178 84 L 216 84" fill="none" stroke="currentColor"
+                stroke-width="1.4" marker-end="url(#ar)"/>
+          <path d="M 144 191 L 178 191 L 178 268 L 216 268" fill="none" stroke="currentColor"
+                stroke-width="1.4" marker-end="url(#ar)"/>
+
+          <!-- ARM A -->
+          <text x="216" y="46" font-family="IBM Plex Mono, monospace" font-size="10.5"
+                letter-spacing="1.4" fill="currentColor" opacity=".62">ARM A — BASELINE</text>
+          <rect x="216" y="56" width="228" height="56" rx="3" fill="none"
+                stroke="currentColor" stroke-width="1.4"/>
+          <text x="330" y="80" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="12.5" fill="currentColor">backtest_trend()</text>
+          <text x="330" y="98" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="11" fill="currentColor" opacity=".62">veto = None</text>
+
+          <path d="M 444 84 L 512 84" fill="none" stroke="currentColor" stroke-width="1.4"
+                marker-end="url(#ar)"/>
+          <text x="478" y="76" text-anchor="middle" font-family="IBM Plex Sans, sans-serif"
+                font-size="10.5" fill="currentColor" opacity=".62">trades</text>
+
+          <!-- ARM B -->
+          <text x="216" y="240" font-family="IBM Plex Mono, monospace" font-size="10.5"
+                letter-spacing="1.4" class="dg-a-f">ARM B — FILTERED</text>
+          <rect x="216" y="250" width="228" height="56" rx="3" fill="none"
+                stroke="currentColor" stroke-width="1.4"/>
+          <text x="330" y="274" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="12.5" fill="currentColor">backtest_trend()</text>
+          <text x="330" y="292" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="11" class="dg-a-f">veto = filter</text>
+
+          <!-- veto excursion -->
+          <path d="M 330 306 L 330 350 L 486 350" fill="none" class="dg-a-s"
+                stroke-width="1.6" marker-end="url(#ar-a)"/>
+          <text x="392" y="342" text-anchor="middle" font-family="IBM Plex Sans, sans-serif"
+                font-size="10.5" class="dg-a-f">at bar close</text>
+
+          <rect x="486" y="326" width="196" height="48" rx="3" fill="none"
+                class="dg-a-s" stroke-width="1.6"/>
+          <text x="584" y="346" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="12" class="dg-a-f">score(headlines)</text>
+          <text x="584" y="363" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="10.5" class="dg-a-f" opacity=".8">48h window · Claude</text>
+
+          <!-- blocked -> retry -->
+          <path d="M 486 350 L 452 350 L 452 396 L 246 396 L 246 306" fill="none"
+                class="dg-a-s" stroke-width="1.4" stroke-dasharray="4 3"
+                marker-end="url(#ar-a)"/>
+          <text x="350" y="390" text-anchor="middle" font-family="IBM Plex Sans, sans-serif"
+                font-size="10.5" class="dg-a-f">blocked → retry next bar</text>
+
+          <!-- allowed -> continue -->
+          <path d="M 444 268 L 512 268" fill="none" stroke="currentColor" stroke-width="1.4"
+                marker-end="url(#ar)"/>
+          <text x="478" y="260" text-anchor="middle" font-family="IBM Plex Sans, sans-serif"
+                font-size="10.5" fill="currentColor" opacity=".62">trades</text>
+
+          <!-- outputs -->
+          <rect x="512" y="56" width="150" height="56" rx="3" fill="none"
+                stroke="currentColor" stroke-width="1.4"/>
+          <text x="587" y="82" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="12" fill="currentColor">baseline</text>
+          <text x="587" y="99" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="12" fill="currentColor">trades</text>
+
+          <rect x="512" y="240" width="150" height="56" rx="3" fill="none"
+                stroke="currentColor" stroke-width="1.4"/>
+          <text x="587" y="266" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="12" fill="currentColor">filtered</text>
+          <text x="587" y="283" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="12" fill="currentColor">trades</text>
+
+          <!-- converge -->
+          <path d="M 662 84 L 730 84 L 730 158" fill="none" stroke="currentColor"
+                stroke-width="1.4" marker-end="url(#ar)"/>
+          <path d="M 662 268 L 730 268 L 730 224" fill="none" stroke="currentColor"
+                stroke-width="1.4" marker-end="url(#ar)"/>
+
+          <rect x="796" y="122" width="188" height="60" rx="3" fill="none"
+                stroke="currentColor" stroke-width="1.4"/>
+          <text x="890" y="147" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="12" fill="currentColor">metric diff</text>
+          <text x="890" y="165" text-anchor="middle" font-family="IBM Plex Sans, sans-serif"
+                font-size="10.5" fill="currentColor" opacity=".62">the realized cost</text>
+
+          <rect x="796" y="200" width="188" height="60" rx="3" fill="none"
+                stroke="currentColor" stroke-width="1.4"/>
+          <text x="890" y="225" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="12" fill="currentColor">attribution</text>
+          <text x="890" y="243" text-anchor="middle" font-family="IBM Plex Sans, sans-serif"
+                font-size="10.5" fill="currentColor" opacity=".62">what blocks landed on</text>
+
+          <path d="M 730 152 L 730 138 L 796 138" fill="none" stroke="currentColor"
+                stroke-width="1.4" marker-end="url(#ar)"/>
+          <path d="M 730 230 L 730 244 L 796 244" fill="none" stroke="currentColor"
+                stroke-width="1.4" marker-end="url(#ar)"/>
+        </svg>
+      </div>
+      <figcaption>
+        Both arms call the same <code>backtest_trend()</code>. The only difference is the
+        <code>veto</code> argument — <code>None</code> on the baseline, a scoring callback on
+        the filtered arm. A blocked entry does not cancel the trend leg; it is retried on
+        the next bar, which is what the live agent does.
+      </figcaption>
+    </figure>
+
+    <h3>Three invariants the harness rests on</h3>
+    <div class="col">
+      <p>
+        Each of these is asserted by a test, because each one silently invalidates every
+        number the harness prints if it breaks.
+      </p>
+      <ul>
+        <li>
+          <strong>Passing <code>veto=None</code> reproduces the old code path exactly.</strong>
+          The <code>deferred</code> retry branch is unreachable without a veto, so the
+          baseline arm is the pre-existing backtest, unchanged. Without this the two arms
+          are not comparable and the diff means nothing.
+        </li>
+        <li>
+          <strong>The veto fires at the decision bar's close, not the execution bar.</strong>
+          A decision taken at bar <em>i</em>'s close executes at bar <em>i+1</em>'s open. If
+          the callback ran at the fill, the news window would include the day being traded.
+        </li>
+        <li>
+          <strong>A block delays an entry; it does not abandon the leg.</strong>
+          Live, <code>desired_long()</code> is a state read — a block today means the agent
+          asks again tomorrow. A simulator that dropped the whole leg on one veto would
+          wildly overstate the filter's cost.
+        </li>
+      </ul>
+    </div>
+
+    <h3>The veto hook</h3>
+    <div class="code col">
+<pre><span class="c-dim"># src/trader/backtest/trend.py</span>
+<span class="c-str">def</span> backtest_trend(symbol, bars, ..., slippage_pct=0.0005, <span class="c-acc">veto=None</span>):
+    <span class="c-dim">"""`veto` is fn(symbol, decision_ts) -> bool, consulted before each
+    entry. Called at the decision bar's *close*, so an implementation
+    must only look at information available strictly before it."""</span>
+    ...
+    <span class="c-str">if</span> pos <span class="c-str">is</span> <span class="c-str">None</span>:
+        breakout = close[i] &gt; prior_high[i]
+        regime_ok = (<span class="c-str">not</span> use_regime_filter) <span class="c-str">or</span> (close[i] &gt; sma[i])
+        <span class="c-str">if</span> close[i] &lt; prior_low[i]:
+            deferred = <span class="c-str">False</span>        <span class="c-dim"># leg is over; stop retrying</span>
+        <span class="c-str">if</span> (breakout <span class="c-str">or</span> deferred) <span class="c-str">and</span> regime_ok:
+            <span class="c-str">if</span> veto <span class="c-str">is not</span> <span class="c-str">None</span> <span class="c-str">and</span> veto(symbol, idx[i]):
+                deferred = <span class="c-str">True</span>     <span class="c-dim"># retry tomorrow, as live does</span>
+            <span class="c-str">else</span>:
+                deferred = <span class="c-str">False</span>
+                pending = <span class="c-acc">"enter"</span></pre>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="lookahead">
+    <h2>Keeping the future out</h2>
+    <div class="col">
+      <p>
+        The README used to say news was "not cleanly backtestable (lookahead)". That is
+        half right, and the half that is wrong was blocking the most valuable measurement
+        available. Lookahead is fatal when news is an <em>entry signal</em>. For a
+        <em>veto</em> on an entry the price data already generated, the requirement is
+        narrower: every headline the model sees must have been published strictly before
+        the decision.
+      </p>
+      <p>
+        Daily bars are stamped with the session <em>date</em>, but the decision happens at
+        the <em>close</em>. Using the bar's own timestamp as the window boundary would
+        silently discard the entire trading day's news — the most relevant headlines there
+        are. So the harness maps each bar to its session close and windows backwards from
+        there.
+      </p>
+    </div>
+
+    <figure>
+      <div class="svg-frame">
+        <svg viewBox="0 0 1000 210" role="img"
+             aria-label="A timeline showing a 48-hour news window ending at the decision bar's session close at 21:00 UTC. The decision is taken at that close, and the resulting trade executes at the next bar's open. Headlines published after the close are excluded.">
+          <defs>
+            <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5"
+                    markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+
+          <!-- axis -->
+          <line x1="40" y1="128" x2="960" y2="128" stroke="currentColor" stroke-width="1.4"
+                marker-end="url(#ar2)"/>
+
+          <!-- window shading -->
+          <rect x="120" y="94" width="440" height="34" class="dg-a-f" opacity=".13"/>
+          <line x1="120" y1="94" x2="120" y2="128" class="dg-a-s" stroke-width="1.6"/>
+          <line x1="560" y1="70" x2="560" y2="150" class="dg-a-s" stroke-width="2"/>
+
+          <text x="340" y="86" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="12" class="dg-a-f">48h news window</text>
+          <text x="340" y="118" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="11" fill="currentColor" opacity=".72">headlines the agent could have had</text>
+
+          <!-- ticks -->
+          <line x1="120" y1="128" x2="120" y2="140" stroke="currentColor" stroke-width="1.4"/>
+          <text x="120" y="160" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="11" fill="currentColor" opacity=".62">close − 48h</text>
+
+          <text x="560" y="60" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="12.5" class="dg-a-f">bar i close · 21:00Z</text>
+          <text x="560" y="170" text-anchor="middle" font-family="IBM Plex Sans, sans-serif"
+                font-size="11.5" fill="currentColor">signal + veto decided here</text>
+
+          <line x1="760" y1="112" x2="760" y2="144" stroke="currentColor" stroke-width="1.6"/>
+          <text x="760" y="102" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="12" fill="currentColor">bar i+1 open</text>
+          <text x="760" y="170" text-anchor="middle" font-family="IBM Plex Sans, sans-serif"
+                font-size="11.5" fill="currentColor" opacity=".72">order fills here</text>
+
+          <!-- excluded zone -->
+          <rect x="576" y="94" width="384" height="34" fill="none" stroke="currentColor"
+                stroke-width="1.2" stroke-dasharray="5 4" opacity=".45"/>
+          <text x="768" y="118" text-anchor="middle" font-family="IBM Plex Mono, monospace"
+                font-size="11" fill="currentColor" opacity=".55">excluded — not yet published</text>
+
+          <!-- arrow decision to fill -->
+          <path d="M 560 186 L 752 186" fill="none" stroke="currentColor" stroke-width="1.3"
+                opacity=".5" marker-end="url(#ar2)"/>
+          <text x="656" y="202" text-anchor="middle" font-family="IBM Plex Sans, sans-serif"
+                font-size="10.5" fill="currentColor" opacity=".55">one bar</text>
+        </svg>
+      </div>
+      <figcaption>
+        <code>session_close_utc()</code> maps a daily bar to <span class="num">21:00Z</span>,
+        the year-round US equity close. Widening slightly during daylight saving is the
+        conservative direction for a veto: it can only add headlines the agent genuinely had.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="findings">
+    <h2>What building it changed</h2>
+    <div class="col">
+      <p>
+        Three design decisions did not survive contact with a running harness. Each was
+        caught by actually executing the thing rather than reasoning about it, and each
+        would have quietly produced a working-looking tool that gave wrong or unaffordable
+        answers.
+      </p>
+    </div>
+
+    <div class="finding">
+      <div class="finding-n">01</div>
+      <div>
+        <h3>Eager scoring was unaffordable</h3>
+        <p>
+          The first design enumerated every bar a veto could <em>possibly</em> touch and
+          scored them all up front. That set is provably a superset, which felt safe — but
+          it is enormous, because a probe that blocks everything never enters a position
+          and therefore stays "wanting to enter" for every bar of every trend leg.
+        </p>
+        <p>
+          Scoring is now lazy. Each symbol's simulation runs in a worker thread and hands
+          scoring requests back to the event loop, so only bars the run actually reaches
+          cost an LLM call. The superset probe survives as the pessimistic bound quoted by
+          <code>--plan</code>.
+        </p>
+        <div class="swing">
+          <span>eager <b>1,094 calls</b></span>
+          <span>lazy <b>28 calls</b></span>
+          <span>on a 6-symbol / 600-day replay</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-n">02</div>
+      <div>
+        <h3>The threading fix deadlocked</h3>
+        <p>
+          Making scoring lazy introduced a classic pool starvation. The simulations run in
+          threads and block waiting on scoring futures; the scorer fetches headlines with
+          <code>asyncio.to_thread</code>. Both were drawing from the same default executor,
+          so once every worker was a simulation waiting on a fetch that could not get a
+          thread, the whole run hung — silently, with no output at all.
+        </p>
+        <p>
+          The simulations now get a dedicated <code>ThreadPoolExecutor</code>, leaving the
+          default pool free for fetches. The regression test is timeout-guarded so a
+          reintroduction fails the suite in <span class="num">60</span> seconds instead of
+          hanging CI forever — and it was verified against the broken version to confirm
+          it is not vacuous.
+        </p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-n">03</div>
+      <div>
+        <h3>The headline number was misleading</h3>
+        <p>
+          The first report showed two numbers that flatly disagreed: attribution summed the
+          blocked winners to a <strong class="num">−81%</strong> cost, while aggregate
+          expectancy had moved <strong class="num">+0.06%</strong>. Both were correct.
+        </p>
+        <p>
+          A veto usually <em>delays</em> an entry rather than cancelling it — the trend
+          signal is re-evaluated the next day, the position opens a bar later, and most of
+          the move is recaptured. Summing the blocked trades' returns therefore describes a
+          cost that never materialised. Every block is now labelled
+          <code>re-entered later</code> or <code>leg abandoned</code>, and the report states
+          outright that the realized price of the filter is the expectancy delta, not the
+          attribution sum.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="running">
+    <h2>Running it</h2>
+    <div class="col">
+      <p>
+        Start with <code>--plan</code>. It is entirely offline — it replays the price
+        simulation, counts the decision-days that would need scoring, and exits without a
+        single LLM call.
+      </p>
+    </div>
+
+    <div class="code col">
+<pre><span class="c-dim"># what would this cost? no LLM calls, no news fetches</span>
+PYTHONPATH=src TRADER_CONFIG_DIR=config/equity \
+  python -m trader.eval.run --days 1500 --plan
+
+<span class="c-dim"># the real thing</span>
+PYTHONPATH=src TRADER_CONFIG_DIR=config/equity \
+  python -m trader.eval.run --days 1500 --out eval-news.json</pre>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Flag</th><th>Default</th><th>Why you would change it</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="mono">--days</td><td class="mono">1500</td><td>History window. Shorter is cheaper while iterating.</td></tr>
+          <tr><td class="mono">--symbols</td><td class="mono">all</td><td>Comma-separated subset — the fastest way to sanity-check a change.</td></tr>
+          <tr><td class="mono">--plan</td><td class="mono">off</td><td>Count the work and exit. Always run this first.</td></tr>
+          <tr><td class="mono">--concurrency</td><td class="mono">4</td><td>Parallel scorers. The Agent SDK spawns a subprocess per call, so raise it carefully.</td></tr>
+          <tr><td class="mono">--cache</td><td class="mono">.eval-cache/</td><td>Point at a different verdict store, or delete it to force a full re-score.</td></tr>
+          <tr><td class="mono">--close-utc-hour</td><td class="mono">21</td><td>Session close bounding the news window. Only for non-US sessions.</td></tr>
+          <tr><td class="mono">--out</td><td class="mono">—</td><td>Write the full result as JSON for diffing or CI.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>The cache is the regression signal</h3>
+    <div class="col">
+      <p>
+        Verdicts are cached to disk keyed by
+        <code>symbol · day · lookback · prompt_version · model</code>. Re-running after
+        changing the report, the thresholds, or the attribution logic costs nothing —
+        <span class="num">0</span> LLM calls, everything served from disk.
+      </p>
+      <p>
+        Changing the prompt or the model invalidates every verdict, by design. That is not
+        a cache inefficiency; it is the mechanism that stops a prompt regression from
+        hiding behind stale scores. When you edit <code>_SYSTEM</code> in
+        <code>src/trader/news.py</code>, bump <code>PROMPT_VERSION</code> alongside it.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="reading">
+    <h2>Reading the output</h2>
+    <div class="col">
+      <p>
+        The report is built to be read in one pass, top to bottom, with the interpretation
+        traps called out inline rather than left in a docstring.
+      </p>
+    </div>
+
+    <div class="code wide">
+<pre>                          baseline    filtered       delta
+----------------------------------------------------------
+trades                         255         255          +0
+win rate                       55%         55%        +0pp
+expectancy/trade            +5.50%      +5.53%      <span class="c-acc">+0.03%</span>   <span class="c-dim">&lt;- the real answer</span>
+profit factor                 2.71        2.73
+total return              +286.38%    +289.48%      +3.10%
+max drawdown                   12%         12%        <span class="c-pos">-0pp</span>   <span class="c-dim">&lt;- 12.42% -&gt; 11.92%</span>
+Sharpe (ann)                  2.45        2.47       +0.02
+
+filter activity: 271 entry decisions consulted, 11 entries blocked (4%)
+                 (15 veto-days incl. daily retries)
+  LLM calls: 149 | from cache: 0 | no headlines: 11
+  errors (failed open): <span class="c-neg">111</span>   <span class="c-dim">&lt;- 41% of consultations</span>
+
+what the blocks landed on (11 of 11 priceable):
+  on a losing trade :   7  &lt;- the filter working
+  on a winning trade:   4
+  block precision   : <span class="c-acc">64%</span> (vs ~45% for blocking at random)   <span class="c-dim">&lt;- above base rate</span>
+  re-entered later  :  11 of 11 — a veto usually delays an entry
+                                  rather than cancelling it
+
+  biggest winners blocked (return of the trade, had it run):
+    AAPL   2023-02-03     <span class="c-neg">+19.60%</span>  re-entered later  bearish news (conf 0.60)
+    AVGO   2026-04-09     <span class="c-neg">+11.43%</span>  re-entered later  bearish news (conf 0.60)
+    CRM    2023-11-29     <span class="c-neg">+10.37%</span>  re-entered later  earnings imminent
+    GOOGL  2024-10-29      <span class="c-neg">+3.71%</span>  re-entered later  earnings imminent
+
+  These are NOT a realized cost — all were re-entered. The filter's
+  actual price is the expectancy/return delta in the table above.</pre>
+    </div>
+
+    <div class="note">
+      <span class="label">Real output, real caveats</span>
+      <p>
+        This is the actual report from a <span class="num">1,500</span>-day run over
+        <span class="num">30</span> symbols with <code>claude-opus-4-8</code> and prompt
+        <code>v1</code> — <span class="num">149</span> live model calls. Raw figures are
+        committed as <code>eval-news.json</code>; the same numbers are tabulated on
+        <a href="evals.html#numbers">the evals page</a>.
+      </p>
+      <p>
+        Two lines deserve more attention than the expectancy delta. <strong>The error
+        count</strong>: 111 of 271 consultations failed and failed open, so for a plurality
+        of this run the strategy traded entirely unfiltered — the fail-open decision turned
+        out to matter more than the prompt. And <strong>the sample size</strong>: 7 of 11 is
+        above the base rate, but at n=11 the probability of doing that well by chance is
+        about <span class="num">0.17</span>. Suggestive, underpowered, and measured under
+        conditions that flatter the filter.
+      </p>
+    </div>
+
+    <h4>How to read each block</h4>
+    <div class="col">
+      <ul>
+        <li>
+          <strong>Expectancy delta is the verdict.</strong> Everything else is diagnosis.
+          If it is negative, the filter is subtracting from a positive-expectancy
+          distribution and the thresholds need to move.
+        </li>
+        <li>
+          <strong>Block precision is read against its base rate</strong>, printed beside it.
+          Below the base rate means the blocks are worse than random.
+        </li>
+        <li>
+          <strong>Blocked entries are counted once</strong>, not once per retry day. A single
+          blocked opportunity re-asks the model every following day while the leg lives;
+          counting those separately would inflate the headline number and dilute precision.
+        </li>
+        <li>
+          <strong>Errors fail open and are counted.</strong> A fetch failure or a parse
+          failure never blocks a trade — mirroring live behaviour — but it does show up in
+          the activity line, so a broken news feed cannot masquerade as a quiet filter.
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="limits">
+    <h2>What it cannot tell you</h2>
+
+    <div class="note">
+      <span class="label">Hindsight contamination</span>
+      <p>
+        The model knows how these dates resolved. It has read about the 2022 drawdown and
+        the 2023 rally. That biases the filter toward looking <em>good</em> on historical
+        replay, which has a useful asymmetry: a <strong>poor result is a lower bound</strong>
+        on how poor the filter really is, while a <strong>good result is not proof</strong>
+        of anything. This harness bounds the damage. It does not establish an edge.
+      </p>
+    </div>
+
+    <div class="col">
+      <p>
+        Two further limits are worth stating plainly:
+      </p>
+      <ul>
+        <li>
+          <strong>Alpaca's news archive is not survivorship-clean.</strong> Coverage depth
+          for a given ticker in 2021 is not necessarily what a live agent would have
+          received that day.
+        </li>
+        <li>
+          <strong>Metrics are per-trade, not portfolio-with-slots.</strong> The harness
+          matches the existing backtester's convention, so it does not model the case where
+          a veto frees a position slot that a different symbol then takes. On a
+          <span class="num">10</span>-slot book that effect is small, but it is not zero.
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="next">
+    <h2>What this unlocks next</h2>
+    <div class="col">
+      <p>
+        The live path is now instrumented to feed the harness. Every tick's journal entry
+        records the <code>headlines</code>, <code>model</code>, and <code>prompt_version</code>
+        behind each verdict — previously only the verdict itself was stored, which made
+        production history unusable as an eval corpus. Three things follow naturally:
+      </p>
+      <ul>
+        <li>
+          <strong>A golden set.</strong> Roughly 150 labelled headline bundles harvested
+          from the journal, pinned as a CI gate: a prompt or model change that drops block
+          precision fails the build.
+        </li>
+        <li>
+          <strong>Threshold calibration.</strong> <code>bearish_confidence_min: 0.6</code>
+          was chosen by feel. With scored history in hand it becomes a sweep — is the
+          model's stated <span class="num">0.8</span> actually right eight times in ten?
+        </li>
+        <li>
+          <strong>Forward evaluation.</strong> The counterfactual replay is contaminated by
+          hindsight; production decisions are not. Joining <code>BLOCKED</code> journal
+          entries to what the symbol subsequently did gives an uncontaminated — if slow —
+          read on the same question.
+        </li>
+      </ul>
+      <p>
+        One structural note for later: the live filter uses the Claude Agent SDK, which
+        spawns a full harness subprocess per call. That is fine at ten calls a day and
+        painful at thousands offline. The Messages API with structured outputs would give
+        schema-guaranteed JSON — deleting the tolerant-parser surface entirely — and batch
+        pricing for offline work. It needs an API key, which the current
+        subscription-token setup deliberately avoids, so the sane split is Agent SDK live,
+        Messages API for evals.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="files">
+    <h2>What changed</h2>
+    <div class="col">
+      <p>
+        The suite runs at <span class="num">70</span> tests —
+        <span class="num">48</span> pre-existing and unchanged, <span class="num">22</span>
+        new. Nothing in the harness touches the network or an LLM under test.
+      </p>
+    </div>
+
+    <div class="files">
+      <div class="file-row">
+        <code>src/trader/eval/news_replay.py<span class="tag">new</span></code>
+        <span>The two-arm replay, lazy scorer, veto recorder, and attribution.</span>
+      </div>
+      <div class="file-row">
+        <code>src/trader/eval/run.py<span class="tag">new</span></code>
+        <span>CLI, the report, and JSON output.</span>
+      </div>
+      <div class="file-row">
+        <code>src/trader/eval/cache.py<span class="tag">new</span></code>
+        <span>Disk verdict cache keyed by prompt version and model. Atomic writes.</span>
+      </div>
+      <div class="file-row">
+        <code>tests/test_eval_news_replay.py<span class="tag">new</span></code>
+        <span>22 tests: the A/B identity, decision-bar timing, retry semantics, no-lookahead window, attribution, deadlock regression, cache invalidation.</span>
+      </div>
+      <div class="file-row">
+        <code>src/trader/backtest/trend.py<span class="tag">modified</span></code>
+        <span>Optional <code>veto</code> hook with the retry branch. Unreachable when <code>veto=None</code>.</span>
+      </div>
+      <div class="file-row">
+        <code>src/trader/news.py<span class="tag">modified</span></code>
+        <span><code>PROMPT_VERSION</code>; provenance fields on <code>Sentiment</code>; point-in-time <code>fetch_window()</code>; module-level <code>claude_score()</code>.</span>
+      </div>
+      <div class="file-row">
+        <code>src/trader/trend_trader.py<span class="tag">modified</span></code>
+        <span>Journal now records headlines, model, prompt version, and reference price per verdict.</span>
+      </div>
+      <div class="file-row">
+        <code>README.md · pyproject.toml · .gitignore<span class="tag">modified</span></code>
+        <span>Harness documentation, the <code>trader-eval</code> entry point, and cache exclusion.</span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Project 10X — Alpaca paper-trading agent. Paper trading only; no real capital.
+    Harness since run against 1,500 days of market history — see
+    <a href="evals.html#numbers">the results</a>. Its hindsight contamination is stated
+    there, and on every run of the report.
+  </footer>
+
+</div>
+
+</body>
+</html>

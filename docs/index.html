@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project 10X — an LLM trading agent that measured itself</title>
+<meta name="description" content="An autonomous Alpaca paper-trading agent that backtested its own strategy, found it losing, and pivoted. Design, approach, evals and results.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<nav class="sitenav">
+  <div class="sitenav-inner">
+    <a class="brand" href="index.html">Project <span>10X</span></a>
+    <a class="nl" href="index.html" aria-current="page">Overview</a>
+    <a class="nl" href="approach.html">Approach</a>
+    <a class="nl" href="design.html">Design</a>
+    <a class="nl" href="evals.html">Evals</a>
+    <a class="nl" href="results.html">Results</a>
+  </div>
+</nav>
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">Autonomous trading agent · paper only</p>
+    <h1>An LLM trading bot that measured itself, then fired itself</h1>
+    <p class="standfirst">Project 10X started as a Claude-driven intraday day-trading agent on Alpaca.
+    Then it got a backtester, and the backtester said the strategy lost money. What survived the
+    measurement is a deterministic trend engine with the language model demoted to a single,
+    narrow job — and the machinery that proved which parts were worth keeping.</p>
+
+    <dl class="kpis">
+      <div class="kpi">
+        <div class="k">Live strategy</div>
+        <div class="v pos">+5.5%</div>
+        <div class="s">expectancy per trade, 255 trades over 1,500 days</div>
+      </div>
+      <div class="kpi">
+        <div class="k">Profit factor</div>
+        <div class="v">2.71</div>
+        <div class="s">gross wins ÷ gross losses</div>
+      </div>
+      <div class="kpi">
+        <div class="k">Original strategy</div>
+        <div class="v neg">−0.08%</div>
+        <div class="s">expectancy per trade — killed on measurement</div>
+      </div>
+      <div class="kpi">
+        <div class="k">LLM in decisions</div>
+        <div class="v">0</div>
+        <div class="s">the model can only veto, never initiate</div>
+      </div>
+    </dl>
+  </header>
+
+  <section id="what">
+    <h2>What this is</h2>
+    <div class="col">
+      <p>A single-user, single-process trading agent that runs against an Alpaca <strong>paper</strong>
+      account. It holds a watchlist of 30 diversified large-caps and ETFs, computes a daily
+      trend signal in plain Python, asks Claude to read the news before it buys, and enforces
+      position and drawdown limits in code that no model output can reach.</p>
+
+      <p>It is roughly 3,100 lines of Python across 22 modules, with 67 tests that need no
+      network. Two offline harnesses exist purely to measure things before they go live: a
+      backtester for the strategy, and a counterfactual eval for the language model.</p>
+    </div>
+
+    <div class="note">
+      <span class="label">The point</span>
+      <p>The interesting artefact here is not the bot. It is the pair of measurement harnesses
+      that decided what the bot became — and the fact that both of them returned answers their
+      author did not want.</p>
+    </div>
+  </section>
+
+  <section id="arc">
+    <h2>The three-act arc</h2>
+
+    <div class="finding">
+      <div class="finding-n">01</div>
+      <div>
+        <h3>Build the obvious thing <span class="pill killed">killed</span></h3>
+        <p>A ReAct loop: feed Claude precomputed indicators for each symbol every few minutes,
+        let it reason, let it call Alpaca order tools through MCP, gate every order with an
+        in-process risk hook. Mean-reversion on RSI and Bollinger bands. It worked, in the sense
+        that it placed orders and never breached a limit.</p>
+        <div class="swing"><b>Verdict</b> plumbing sound · strategy unmeasured</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-n">02</div>
+      <div>
+        <h3>Build the backtester <span class="pill">the pivot</span></h3>
+        <p>No-lookahead bar simulation, intrabar stops, modelled slippage. It reported the
+        mean-reversion strategy at <span class="num">−0.08%</span> expectancy per trade, profit
+        factor <span class="num">0.45</span>, and about <span class="num">−50%</span> on the
+        active variant. Net of a modelled 10 bps round-turn cost, the gross edge was roughly
+        <span class="num">+2 bps</span> — a rounding error against its own transaction costs.</p>
+        <p>The same harness found daily Donchian trend-following at
+        <span class="num pos-t">+5.8%</span> expectancy and profit factor near 3. The live engine
+        was rewritten the same day to remove the model from the trade decision entirely.</p>
+        <div class="swing"><b>Verdict</b> strategy replaced · LLM removed from decisions</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-n">03</div>
+      <div>
+        <h3>Measure the model itself <span class="pill live">shipped</span></h3>
+        <p>Claude came back in one narrow role: read recent headlines before an entry and block
+        the trade if the news is strongly bearish or earnings are imminent. It can block, never
+        initiate. Because news sentiment is not backtestable as a <em>signal</em>, a second
+        harness measures it as a <em>cost</em> — replaying history twice through the same
+        simulator, once with the veto and once without.</p>
+        <p>The answer, honestly reported: approximately free and approximately useless.
+        <span class="num">+0.03</span> percentage points of expectancy, block precision
+        <span class="num">63.6%</span> against a <span class="num">45%</span> random baseline — above
+        it, but at n=11 the odds of doing that well by chance are about
+        <span class="num">0.17</span>. Suggestive and underpowered.</p>
+        <div class="swing"><b>Verdict</b> kept, constrained, and not expanded</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="read">
+    <h2>Read on</h2>
+    <div class="cards">
+      <a class="card" href="approach.html">
+        <div class="k">01 — Approach</div>
+        <h3>The three rules, and the decision log</h3>
+        <p>Never trade an unvalidated edge. Put the model only where it has edge, and only as a
+        veto. Enforce risk in code beneath the decision layer. Plus every idea tried and
+        rejected, with the reason.</p>
+        <span class="more">Read the approach →</span>
+      </a>
+      <a class="card" href="design.html">
+        <div class="k">02 — Design</div>
+        <h3>System design &amp; architecture</h3>
+        <p>Components, data flow, the tick walked line by line, the three independent risk
+        layers, and the agentic-safety pattern that stops a model taking an unsanctioned
+        action.</p>
+        <span class="more">Read the design →</span>
+      </a>
+      <a class="card" href="evals.html">
+        <div class="k">03 — Evals</div>
+        <h3>How both harnesses work</h3>
+        <p>The backtester's five disciplines, and the counterfactual A/B that prices an LLM
+        component which can only subtract. Including why accuracy is the wrong metric.</p>
+        <span class="more">Read the evals →</span>
+      </a>
+      <a class="card" href="results.html">
+        <div class="k">04 — Results</div>
+        <h3>What was actually achieved</h3>
+        <p>Every measured number in one place, what each one does and does not support, and an
+        unhedged list of what is still wrong with it.</p>
+        <span class="more">Read the results →</span>
+      </a>
+    </div>
+
+    <h3>Also in this repo</h3>
+    <div class="files">
+      <div class="file-row">
+        <code>docs/earning-the-veto.html</code>
+        <span>Long-form essay on building the news-filter eval — the reasoning behind the
+        method, at length. <a href="earning-the-veto.html">Read it</a></span>
+      </div>
+      <div class="file-row">
+        <code>docs/architecture.md</code>
+        <span>Step-by-step code walkthrough, 1,100 lines, with verified file and line
+        references. The document to read with the source open.</span>
+      </div>
+      <div class="file-row">
+        <code>CHANGELOG.md</code>
+        <span>The decision log as it happened, version by version, including the bugs.</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="caveat">
+    <h2>Before you read the numbers</h2>
+    <div class="col">
+      <p>Every figure on this site comes from a paper account and an offline simulator. The trend
+      edge was measured on mega-cap survivors across a broadly bullish multi-year window, which
+      is the most flattering possible sample. The news-filter eval is contaminated by the model's
+      own hindsight, and says so on every run.</p>
+      <p>None of this is evidence that the system makes money. It is evidence about
+      <em>which parts of it were worth building</em>, which is a smaller and more defensible
+      claim.</p>
+    </div>
+  </section>
+
+  <footer>
+    <p>Project 10X · paper trading only, no real capital · this is an engineering write-up,
+    not financial advice. Automated trading can lose money quickly; the risk layer exists
+    precisely because the strategy might be wrong.</p>
+  </footer>
+
+</div>
+</body>
+</html>

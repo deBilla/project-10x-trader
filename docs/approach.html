@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Approach — Project 10X</title>
+<meta name="description" content="The three rules the system follows, and the full decision log of what was tried and rejected.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<nav class="sitenav">
+  <div class="sitenav-inner">
+    <a class="brand" href="index.html">Project <span>10X</span></a>
+    <a class="nl" href="index.html">Overview</a>
+    <a class="nl" href="approach.html" aria-current="page">Approach</a>
+    <a class="nl" href="design.html">Design</a>
+    <a class="nl" href="evals.html">Evals</a>
+    <a class="nl" href="results.html">Results</a>
+  </div>
+</nav>
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">01 — Approach</p>
+    <h1>Three rules, and the log of everything they killed</h1>
+    <p class="standfirst">The codebase looks arbitrary until you know the rules it follows. All
+    three were learned the expensive way, and each one deleted working code that had already
+    shipped.</p>
+  </header>
+
+  <section id="rules">
+    <h2>The three rules</h2>
+
+    <div class="finding">
+      <div class="finding-n">01</div>
+      <div>
+        <h3>Never trade an unvalidated edge</h3>
+        <p>The decision logic must be expressible as code, replayable over history, and measured
+        with modelled costs <em>before</em> it touches an account. This is why the backtester is
+        not an afterthought bolted on at the end — it is the component that has final say over
+        what ships.</p>
+        <p>The corollary is harsh, and it was applied without hedging. The original
+        mean-reversion strategy was backtested, came back with negative expectancy, and was
+        removed from the live path the same day. Not tuned. Not given another window. Removed.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-n">02</div>
+      <div>
+        <h3>The model goes only where it has edge — and only as a veto</h3>
+        <p>Language models are unreliable at arithmetic over price series and genuinely good at
+        synthesising prose. So indicators are computed in pandas and never by the model, and
+        Claude reads <em>headlines</em>, which is a language task.</p>
+        <p>The second half of the rule matters more than the first. Claude's output can only
+        <strong>subtract</strong> — block an entry the deterministic signal already wanted. It
+        can never add one. A bullish verdict has exactly the same effect as a neutral one: the
+        control flow has no branch that makes a trade more likely.</p>
+        <p>That asymmetry is not stylistic. It is what makes the component measurable, because a
+        thing that can only block has exactly one way to hurt you — and that single failure mode
+        is what the eval prices.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-n">03</div>
+      <div>
+        <h3>Risk is enforced in code, beneath the decision layer</h3>
+        <p>Position caps, open-position counts, the symbol whitelist and the daily drawdown
+        kill-switch are read from YAML at startup and enforced by plain Python. In the original
+        LLM mode they were enforced by a <code>PreToolUse</code> hook the model could not reach
+        around: the hook intercepted every order tool call before it reached the server and could
+        deny it outright.</p>
+        <p>No model output has ever been able to raise a limit, and the risk layer has no path
+        to the model — the isolation runs in both directions.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="log">
+    <h2>The decision log</h2>
+    <div class="col">
+      <p>Every significant idea, in the order it was tried, with what happened to it. Sourced
+      from <code>CHANGELOG.md</code>, which was written as the decisions were made rather than
+      reconstructed afterwards.</p>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <caption>Development milestones, not releases. Paper trading throughout.</caption>
+        <thead>
+          <tr><th>Ver</th><th>Move</th><th>What happened</th><th>Outcome</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">0.1.0</td>
+            <td>LLM ReAct MVP</td>
+            <td>Scheduled ReAct loop, Alpaca MCP for execution, precomputed indicators fed to
+            Claude, in-process risk hook. Mean-reversion.</td>
+            <td><span class="pill">shipped</span></td>
+          </tr>
+          <tr>
+            <td class="mono">0.2.0</td>
+            <td>Containerised</td>
+            <td>Full stack on Docker, subscription OAuth auth. Added a momentum/breakout path
+            alongside mean-reversion.</td>
+            <td><span class="pill">shipped</span></td>
+          </tr>
+          <tr>
+            <td class="mono">0.3.0</td>
+            <td>Second agent (crypto)</td>
+            <td>Two agents from one image via profiles, per-agent Redis namespacing, scoped
+            drawdown liquidation.</td>
+            <td><span class="pill killed">paused</span></td>
+          </tr>
+          <tr>
+            <td class="mono">0.4.0</td>
+            <td>Realistic small account</td>
+            <td>Moved to a $1,000 paper account. Forced long-only, fractional, software stops —
+            fractional shares cannot carry brackets.</td>
+            <td><span class="pill">shipped</span></td>
+          </tr>
+          <tr class="hi">
+            <td class="mono">0.5.0</td>
+            <td>Backtester + the pivot</td>
+            <td>Mean-reversion measured at negative expectancy. Trend-following measured at
+            +7.7%. Live engine rewritten to remove the LLM from the decision.</td>
+            <td><span class="pill ok">the turn</span></td>
+          </tr>
+          <tr>
+            <td class="mono">0.6.0</td>
+            <td>Diversification</td>
+            <td>Universe 12 → 30 names, max positions 4 → 10, size 20% → 10%. Re-backtest held
+            up including the losers.</td>
+            <td><span class="pill ok">improved</span></td>
+          </tr>
+          <tr>
+            <td class="mono">0.7.0</td>
+            <td>Options explored</td>
+            <td>Covered calls need 100-share lots (~$30k/position). Option buying has no
+            backtestable history, ~6.5% spreads, negative base rate.</td>
+            <td><span class="pill killed">declined</span></td>
+          </tr>
+          <tr>
+            <td class="mono">0.8.0</td>
+            <td>News risk-filter</td>
+            <td>Claude returns to score headlines as a veto on trend entries. Journaled with
+            full provenance so verdicts stay re-scorable.</td>
+            <td><span class="pill live">live</span></td>
+          </tr>
+          <tr>
+            <td class="mono">—</td>
+            <td>Eval harness</td>
+            <td>Counterfactual A/B to price the veto. Returned "roughly neutral" and the filter
+            was kept but deliberately not expanded.</td>
+            <td><span class="pill ok">measured</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="rejected">
+    <h2>What got rejected, and why</h2>
+    <div class="col">
+      <p>Four ideas were tried seriously and dropped. The reasons are more useful than the
+      strategies.</p>
+    </div>
+
+    <h3>Intraday mean-reversion</h3>
+    <div class="col">
+      <p>RSI extremes plus a Bollinger touch, on 5-minute bars, with the LLM deciding. Measured
+      at <span class="num neg-t">−0.08%</span> per trade and profit factor
+      <span class="num">0.45</span>; the looser "active" variant lost about half the account.</p>
+      <p>The diagnosis matters: net expectancy was −8 bps against a modelled 10 bps round-turn
+      cost, so the <em>gross</em> edge was around +2 bps. The strategy was not
+      wrong so much as too small to survive its own transaction costs. Churn was the killer, and
+      no amount of prompt engineering addresses churn.</p>
+    </div>
+
+    <h3>Small-account options</h3>
+    <div class="col">
+      <p>Covered calls require 100-share lots, which is $30,000-plus per position — impossible on
+      a $1,000 account. Buying options instead runs into three walls at once: no historical
+      option chains to backtest against, bid/ask spreads around 6.5%, and a negative base rate
+      for long premium. It failed the first rule on the "unbacktestable" clause alone.</p>
+    </div>
+
+    <h3>News as a directional signal</h3>
+    <div class="col">
+      <p>The tempting version of the news component reads a headline and decides to buy. It was
+      not built, for a reason that is structural rather than empirical: by the time an RSS item
+      or an EDGAR filing has been fetched, deduplicated, and scored, the move it describes is
+      tens of seconds old and already priced. Headline-driven entries are a latency game this
+      system deliberately does not enter.</p>
+      <p>What remained was the veto — the one use of news where being slightly late costs
+      nothing, because you are declining to act rather than racing to.</p>
+    </div>
+
+    <h3>Crypto</h3>
+    <div class="col">
+      <p>Built, containerised, and paused. Alpaca's paper environment does not reliably fill
+      crypto orders — market, limit, notional and quantity variants were all confirmed sitting
+      unfilled. The agent is gated behind a Compose profile rather than deleted, because the
+      code is fine and only the venue is the problem.</p>
+    </div>
+  </section>
+
+  <section id="cost">
+    <h2>A note on what "cheap" means</h2>
+    <div class="col">
+      <p>The standard framing for LLM cost control is tokens per day. That framing is available
+      here and it is not the binding constraint. Claude is consulted only on breakout candidates
+      — a few times a week, not thirty times an hour — so the whole 1,500-day eval cost
+      <span class="num">149</span> model calls.</p>
+      <p>For an account this size the dominant costs are elsewhere: market data subscriptions,
+      spread and slippage, and the box it runs on. Slippage in particular is the cost that
+      actually decided the architecture, since it is what turned a marginally positive gross
+      edge into a reliably negative net one. Any future cost NFR on this system should be
+      denominated in basis points against equity, not dollars per day of inference.</p>
+    </div>
+  </section>
+
+  <div class="pager">
+    <a href="index.html">← Overview</a>
+    <a href="design.html">Design →</a>
+  </div>
+
+  <footer>
+    <p>Project 10X · paper trading only · engineering write-up, not financial advice.</p>
+  </footer>
+
+</div>
+</body>
+</html>
