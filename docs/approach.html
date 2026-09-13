@@ -4,237 +4,120 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Approach — Project 10X</title>
-<meta name="description" content="The three rules the system follows, and the full decision log of what was tried and rejected.">
+<meta name="description" content="The three rules the trading bot follows, and everything that was tried and thrown away — explained simply.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap">
 <link rel="stylesheet" href="assets/site.css">
 </head>
 <body>
-
-<nav class="sitenav">
-  <div class="sitenav-inner">
-    <a class="brand" href="index.html">Project <span>10X</span></a>
-    <a class="nl" href="index.html">Overview</a>
-    <a class="nl" href="approach.html" aria-current="page">Approach</a>
-    <a class="nl" href="design.html">Design</a>
-    <a class="nl" href="evals.html">Evals</a>
-    <a class="nl" href="results.html">Results</a>
-  </div>
-</nav>
-
+<nav class="sitenav"><div class="sitenav-inner">
+  <a class="brand" href="index.html">Project <span>10X</span></a>
+  <a class="nl" href="index.html">Overview</a>
+  <a class="nl" href="approach.html" aria-current="page">Approach</a>
+  <a class="nl" href="design.html">Build it</a>
+  <a class="nl" href="evals.html">Testing</a>
+  <a class="nl" href="results.html">Results</a>
+  <a class="nl" href="glossary.html">Glossary</a>
+</div></nav>
 <div class="page">
 
   <header class="masthead">
-    <p class="eyebrow">01 — Approach</p>
-    <h1>Three rules, and the log of everything they killed</h1>
-    <p class="standfirst">The codebase looks arbitrary until you know the rules it follows. All
-    three were learned the expensive way, and each one deleted working code that had already
-    shipped.</p>
+    <p class="eyebrow">Approach</p>
+    <h1>Three rules, and everything they threw away</h1>
+    <p class="standfirst">The design only makes sense once you know the three rules it follows. Each one was learned by getting it wrong first, and each one deleted code that was already running.</p>
   </header>
 
   <section id="rules">
     <h2>The three rules</h2>
 
     <div class="finding">
-      <div class="finding-n">01</div>
+      <div class="finding-n">1</div>
       <div>
-        <h3>Never trade an unvalidated edge</h3>
-        <p>The decision logic must be expressible as code, replayable over history, and measured
-        with modelled costs <em>before</em> it touches an account. This is why the backtester is
-        not an afterthought bolted on at the end — it is the component that has final say over
-        what ships.</p>
-        <p>The corollary is harsh, and it was applied without hedging. The original
-        mean-reversion strategy was backtested, came back with negative expectancy, and was
-        removed from the live path the same day. Not tuned. Not given another window. Removed.</p>
+        <h3>Don't trade a rule you haven't tested</h3>
+        <p>Before any rule is allowed to place a real order, it has to be written as plain code and replayed over years of past prices, including the costs of trading. If the replay says it loses money, it does not ship. No exceptions, no "let's just try it for a week".</p>
+        <p>This sounds obvious. Most hobby trading bots skip it, because writing the replay tool is more work than writing the bot. Here, the replay tool is the boss: when it said the first strategy lost money, the strategy was removed the same day.</p>
       </div>
     </div>
 
     <div class="finding">
-      <div class="finding-n">02</div>
+      <div class="finding-n">2</div>
       <div>
-        <h3>The model goes only where it has edge — and only as a veto</h3>
-        <p>Language models are unreliable at arithmetic over price series and genuinely good at
-        synthesising prose. So indicators are computed in pandas and never by the model, and
-        Claude reads <em>headlines</em>, which is a language task.</p>
-        <p>The second half of the rule matters more than the first. Claude's output can only
-        <strong>subtract</strong> — block an entry the deterministic signal already wanted. It
-        can never add one. A bullish verdict has exactly the same effect as a neutral one: the
-        control flow has no branch that makes a trade more likely.</p>
-        <p>That asymmetry is not stylistic. It is what makes the component measurable, because a
-        thing that can only block has exactly one way to hurt you — and that single failure mode
-        is what the eval prices.</p>
+        <h3>Only give the AI jobs it's good at — and only let it say no</h3>
+        <p>Language models like Claude are excellent at reading text and poor at arithmetic over long lists of numbers. So all the number-crunching (averages, highs, lows) is done by ordinary code, and Claude only ever sees words: news headlines.</p>
+        <p>The second half matters more. Claude's answer can only <strong>block</strong> a purchase the rule already wanted to make. There is no path in the code where a Claude answer causes a buy. Even if Claude said "this stock is definitely going up!", the program would treat that exactly like "no opinion".</p>
+        <p>Why so strict? Because something that can only say "no" has exactly one way to hurt you — blocking a good trade — and that one thing can be measured. Something that can also say "yes" has many ways to hurt you, most of them hard to measure.</p>
       </div>
     </div>
 
     <div class="finding">
-      <div class="finding-n">03</div>
+      <div class="finding-n">3</div>
       <div>
-        <h3>Risk is enforced in code, beneath the decision layer</h3>
-        <p>Position caps, open-position counts, the symbol whitelist and the daily drawdown
-        kill-switch are read from YAML at startup and enforced by plain Python. In the original
-        LLM mode they were enforced by a <code>PreToolUse</code> hook the model could not reach
-        around: the hook intercepted every order tool call before it reached the server and could
-        deny it outright.</p>
-        <p>No model output has ever been able to raise a limit, and the risk layer has no path
-        to the model — the isolation runs in both directions.</p>
+        <h3>Keep the safety limits in plain code the AI can't reach</h3>
+        <p>How much to put in one stock (10% of the account). How many stocks at once (10). Which stocks are allowed (the 30 on the list). When to sell everything and stop for the day (a 10% loss). All of these are ordinary settings in a text file, enforced by ordinary Python.</p>
+        <p>In the first version, where Claude placed orders itself, every order passed through a checkpoint that could refuse it before it reached the broker. Claude could not see the checkpoint, could not talk to it, and could not change its settings. It is the difference between telling a new employee "please don't spend more than $100" and giving them a card with a $100 limit.</p>
       </div>
     </div>
   </section>
 
   <section id="log">
-    <h2>The decision log</h2>
+    <h2>What was tried, in order</h2>
     <div class="col">
-      <p>Every significant idea, in the order it was tried, with what happened to it. Sourced
-      from <code>CHANGELOG.md</code>, which was written as the decisions were made rather than
-      reconstructed afterwards.</p>
+      <p>From the project's change log, written as decisions were made rather than reconstructed later.</p>
     </div>
-
     <div class="table-wrap">
       <table>
-        <caption>Development milestones, not releases. Paper trading throughout.</caption>
-        <thead>
-          <tr><th>Ver</th><th>Move</th><th>What happened</th><th>Outcome</th></tr>
-        </thead>
+        <thead><tr><th>Step</th><th>What was built</th><th>What happened</th></tr></thead>
         <tbody>
-          <tr>
-            <td class="mono">0.1.0</td>
-            <td>LLM ReAct MVP</td>
-            <td>Scheduled ReAct loop, Alpaca MCP for execution, precomputed indicators fed to
-            Claude, in-process risk hook. Mean-reversion.</td>
-            <td><span class="pill">shipped</span></td>
-          </tr>
-          <tr>
-            <td class="mono">0.2.0</td>
-            <td>Containerised</td>
-            <td>Full stack on Docker, subscription OAuth auth. Added a momentum/breakout path
-            alongside mean-reversion.</td>
-            <td><span class="pill">shipped</span></td>
-          </tr>
-          <tr>
-            <td class="mono">0.3.0</td>
-            <td>Second agent (crypto)</td>
-            <td>Two agents from one image via profiles, per-agent Redis namespacing, scoped
-            drawdown liquidation.</td>
-            <td><span class="pill killed">paused</span></td>
-          </tr>
-          <tr>
-            <td class="mono">0.4.0</td>
-            <td>Realistic small account</td>
-            <td>Moved to a $1,000 paper account. Forced long-only, fractional, software stops —
-            fractional shares cannot carry brackets.</td>
-            <td><span class="pill">shipped</span></td>
-          </tr>
-          <tr class="hi">
-            <td class="mono">0.5.0</td>
-            <td>Backtester + the pivot</td>
-            <td>Mean-reversion measured at negative expectancy. Trend-following measured at
-            +7.7%. Live engine rewritten to remove the LLM from the decision.</td>
-            <td><span class="pill ok">the turn</span></td>
-          </tr>
-          <tr>
-            <td class="mono">0.6.0</td>
-            <td>Diversification</td>
-            <td>Universe 12 → 30 names, max positions 4 → 10, size 20% → 10%. Re-backtest held
-            up including the losers.</td>
-            <td><span class="pill ok">improved</span></td>
-          </tr>
-          <tr>
-            <td class="mono">0.7.0</td>
-            <td>Options explored</td>
-            <td>Covered calls need 100-share lots (~$30k/position). Option buying has no
-            backtestable history, ~6.5% spreads, negative base rate.</td>
-            <td><span class="pill killed">declined</span></td>
-          </tr>
-          <tr>
-            <td class="mono">0.8.0</td>
-            <td>News risk-filter</td>
-            <td>Claude returns to score headlines as a veto on trend entries. Journaled with
-            full provenance so verdicts stay re-scorable.</td>
-            <td><span class="pill live">live</span></td>
-          </tr>
-          <tr>
-            <td class="mono">—</td>
-            <td>Eval harness</td>
-            <td>Counterfactual A/B to price the veto. Returned "roughly neutral" and the filter
-            was kept but deliberately not expanded.</td>
-            <td><span class="pill ok">measured</span></td>
-          </tr>
+          <tr><td class="mono">1</td><td>AI decides everything</td><td>Claude got the numbers every few minutes and placed orders through tools, with a safety checkpoint on every order. <span class="pill">ran fine</span></td></tr>
+          <tr><td class="mono">2</td><td>Packaged for a server</td><td>Docker containers, Claude login sorted, a second "momentum" rule added alongside the first. <span class="pill">ran fine</span></td></tr>
+          <tr><td class="mono">3</td><td>A crypto version</td><td>Same code, different settings, trading Bitcoin and friends. Paused: the paper-trading broker doesn't actually fill crypto orders. <span class="pill killed">paused</span></td></tr>
+          <tr><td class="mono">4</td><td>Realistic account size</td><td>Switched to a $1,000 fake account. That forced fractional shares, which can't carry automatic stop-losses. <span class="pill">ran fine</span></td></tr>
+          <tr class="hi"><td class="mono">5</td><td><strong>The replay tool</strong></td><td>Showed the AI strategy losing money and a simple trend rule making money. Live program rewritten; AI removed from decisions. <span class="pill ok">the turning point</span></td></tr>
+          <tr><td class="mono">6</td><td>More stocks</td><td>12 stocks → 30. Replay still positive, even counting the losers. <span class="pill ok">improved</span></td></tr>
+          <tr><td class="mono">7</td><td>Options?</td><td>Looked at options trading. Needs $30,000 per position for the safe kind; the risky kind can't be replayed. <span class="pill killed">declined</span></td></tr>
+          <tr><td class="mono">8</td><td>AI as news filter</td><td>Claude returns with one job: read headlines, block bad buys. <span class="pill live">live</span></td></tr>
+          <tr><td class="mono">9</td><td>Test the news filter</td><td>Built a second replay to price it. Verdict: roughly worthless, but harmless. Kept, not expanded. <span class="pill ok">measured</span></td></tr>
+          <tr><td class="mono">10</td><td>Check the live results</td><td>Three months of real running underperformed doing nothing. Found the cause (a timing bug), fixed it. <span class="pill ok">fixed</span></td></tr>
         </tbody>
       </table>
     </div>
   </section>
 
   <section id="rejected">
-    <h2>What got rejected, and why</h2>
+    <h2>What got thrown away, and why</h2>
+
+    <h3>The "AI decides" strategy</h3>
     <div class="col">
-      <p>Four ideas were tried seriously and dropped. The reasons are more useful than the
-      strategies.</p>
+      <p>It watched for stocks that had dropped sharply and bet on a bounce, checking every five minutes. The replay showed a loss of about 0.08% per trade. That sounds tiny, and it is — that's the point. Each trade earned roughly 0.02% before costs, and cost about 0.10% in <a class="term" href="glossary.html#slippage">slippage</a> to get in and out. A strategy that trades often and earns little per trade will always lose to its own costs. No better prompt fixes that.</p>
     </div>
 
-    <h3>Intraday mean-reversion</h3>
+    <h3>Options</h3>
     <div class="col">
-      <p>RSI extremes plus a Bollinger touch, on 5-minute bars, with the LLM deciding. Measured
-      at <span class="num neg-t">−0.08%</span> per trade and profit factor
-      <span class="num">0.45</span>; the looser "active" variant lost about half the account.</p>
-      <p>The diagnosis matters: net expectancy was −8 bps against a modelled 10 bps round-turn
-      cost, so the <em>gross</em> edge was around +2 bps. The strategy was not
-      wrong so much as too small to survive its own transaction costs. Churn was the killer, and
-      no amount of prompt engineering addresses churn.</p>
+      <p>The conservative options strategy needs you to own 100 shares of a company — around $30,000 a position. The other kind (buying options) has no price history to replay against, has a 6.5% built-in cost every time you trade, and loses money for most people most of the time. Failed rule 1 before anything was built.</p>
     </div>
 
-    <h3>Small-account options</h3>
+    <h3>Using news to decide what to buy</h3>
     <div class="col">
-      <p>Covered calls require 100-share lots, which is $30,000-plus per position — impossible on
-      a $1,000 account. Buying options instead runs into three walls at once: no historical
-      option chains to backtest against, bid/ask spreads around 6.5%, and a negative base rate
-      for long premium. It failed the first rule on the "unbacktestable" clause alone.</p>
-    </div>
-
-    <h3>News as a directional signal</h3>
-    <div class="col">
-      <p>The tempting version of the news component reads a headline and decides to buy. It was
-      not built, for a reason that is structural rather than empirical: by the time an RSS item
-      or an EDGAR filing has been fetched, deduplicated, and scored, the move it describes is
-      tens of seconds old and already priced. Headline-driven entries are a latency game this
-      system deliberately does not enter.</p>
-      <p>What remained was the veto — the one use of news where being slightly late costs
-      nothing, because you are declining to act rather than racing to.</p>
+      <p>The tempting version of the news feature: read a headline, buy the stock. It was never built, for a reason that has nothing to do with AI quality. By the time a headline has been fetched and read, the price has already moved — professional systems react in milliseconds. Being late and buying is expensive. Being late and <em>declining</em> to buy costs nothing. So the AI was only ever given the second job.</p>
     </div>
 
     <h3>Crypto</h3>
     <div class="col">
-      <p>Built, containerised, and paused. Alpaca's paper environment does not reliably fill
-      crypto orders — market, limit, notional and quantity variants were all confirmed sitting
-      unfilled. The agent is gated behind a Compose profile rather than deleted, because the
-      code is fine and only the venue is the problem.</p>
+      <p>Fully built and switched off. The paper-trading broker simply doesn't fill crypto orders — every type was tried and all sat unfilled forever. The code is fine; the test environment isn't. It's parked behind a switch rather than deleted.</p>
     </div>
   </section>
 
   <section id="cost">
-    <h2>A note on what "cheap" means</h2>
+    <h2>A note on cost</h2>
     <div class="col">
-      <p>The standard framing for LLM cost control is tokens per day. That framing is available
-      here and it is not the binding constraint. Claude is consulted only on breakout candidates
-      — a few times a week, not thirty times an hour — so the whole 1,500-day eval cost
-      <span class="num">149</span> model calls.</p>
-      <p>For an account this size the dominant costs are elsewhere: market data subscriptions,
-      spread and slippage, and the box it runs on. Slippage in particular is the cost that
-      actually decided the architecture, since it is what turned a marginally positive gross
-      edge into a reliably negative net one. Any future cost NFR on this system should be
-      denominated in basis points against equity, not dollars per day of inference.</p>
+      <p>People worry about AI costs in a project like this. They're not the issue. Claude is only asked about a stock when the rule is about to buy it — a few times a week, not every minute. The entire four-year test of the news filter took 149 Claude calls.</p>
+      <p>The cost that actually decided the design was slippage — the small loss on every trade — because it turned a rule that was barely profitable into one that reliably lost. If you're building something like this, measure your trading costs before you measure your AI bill.</p>
     </div>
   </section>
 
-  <div class="pager">
-    <a href="index.html">← Overview</a>
-    <a href="design.html">Design →</a>
-  </div>
-
-  <footer>
-    <p>Project 10X · paper trading only · engineering write-up, not financial advice.</p>
-  </footer>
-
+  <div class="pager"><a href="index.html">← Overview</a><a href="design.html">Build it →</a></div>
+  <footer><p>Project 10X · paper trading only · not financial advice.</p></footer>
 </div>
 </body>
 </html>

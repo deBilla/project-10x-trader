@@ -592,3 +592,20 @@ tbody tr.hi td { background: var(--accent-bg); }
   .sitenav-inner { gap: 0 16px; }
   .kpi { border-right: 0; }
 }
+
+/* ---------------- plain-language additions ---------------- */
+.term { border-bottom: 1px dotted var(--muted); text-decoration: none; color: inherit; }
+.term:hover { border-bottom-color: var(--accent); color: var(--accent); }
+.plain { background: var(--accent-bg); border-radius: 3px; padding: 14px 18px; margin: 18px 0 22px; max-width: var(--measure); font-size: .95rem; }
+.plain .k { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+.plain p { margin: 0; max-width: none; }
+.step { display: grid; grid-template-columns: 56px 1fr; gap: 0 20px; padding: 26px 0; border-top: 1px solid var(--line); }
+.step-n { font-family: var(--mono); font-size: 22px; font-weight: 600; color: var(--accent); line-height: 1; padding-top: 2px; font-variant-numeric: tabular-nums; }
+.step h3 { margin: 0 0 8px; font-size: 1.1rem; }
+.step .check { font-family: var(--mono); font-size: .82rem; color: var(--muted); padding: 10px 0 0; }
+.step .check b { color: var(--pos); font-weight: 500; }
+dl.gl { max-width: var(--measure); }
+dl.gl dt { font-weight: 600; margin-top: 18px; scroll-margin-top: 70px; }
+dl.gl dd { margin: 4px 0 0; color: var(--text); }
+dl.gl dd .eg { color: var(--muted); font-size: .9rem; display: block; margin-top: 3px; }
+@media (max-width: 620px) { .step { grid-template-columns: 1fr; gap: 6px; } }

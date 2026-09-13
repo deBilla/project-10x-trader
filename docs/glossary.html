@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glossary — Project 10X</title>
+<meta name="description" content="Every trading, testing and AI term used on this site, explained in plain words.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<nav class="sitenav"><div class="sitenav-inner">
+  <a class="brand" href="index.html">Project <span>10X</span></a>
+  <a class="nl" href="index.html">Overview</a>
+  <a class="nl" href="approach.html">Approach</a>
+  <a class="nl" href="design.html">Build it</a>
+  <a class="nl" href="evals.html">Testing</a>
+  <a class="nl" href="results.html">Results</a>
+  <a class="nl" href="glossary.html" aria-current="page">Glossary</a>
+</div></nav>
+<div class="page">
+  <header class="masthead">
+    <p class="eyebrow">Glossary</p>
+    <h1>The words, in plain English</h1>
+    <p class="standfirst">Every term used on this site. If a word on another page is dotted-underlined, it links here.</p>
+  </header>
+
+  <section>
+    <h2>Trading words</h2>
+    <dl class="gl">
+      <dt id="paper">Paper trading</dt>
+      <dd>Trading with fake money on a real market feed. Prices are real, orders are real, the money is not. This project only ever paper trades.</dd>
+
+      <dt id="watchlist">Watchlist</dt>
+      <dd>The fixed list of stocks the system is allowed to trade. Here it is 30 big, well-known US companies and index funds (Apple, Microsoft, Nvidia, the S&amp;P 500 fund, and so on). Nothing outside the list can ever be bought.</dd>
+
+      <dt id="position">Position</dt>
+      <dd>Shares you currently own in one company. "10 positions" means you own shares in 10 different companies.</dd>
+
+      <dt id="long">Long / long-only</dt>
+      <dd>"Going long" just means buying and hoping the price rises. "Long-only" means the system never bets on prices falling (it never "shorts"). Simpler, and safer for a small account.</dd>
+
+      <dt id="fractional">Fractional shares / notional order</dt>
+      <dd>Buying a dollar amount instead of a whole number of shares. "Buy $100 of Nvidia" instead of "buy 1 share". Lets a $1,000 account own ten different stocks.
+      <span class="eg">Downside: fractional orders cannot carry an automatic stop-loss at the broker. See "stop loss".</span></dd>
+
+      <dt id="stop">Stop loss / bracket order</dt>
+      <dd>An instruction left with the broker: "if this drops to $X, sell it automatically." A "bracket" is a stop loss plus a take-profit attached to the same order. This system cannot use them (fractional shares), so its exits are decided by the program each hour instead.</dd>
+
+      <dt id="bar">Daily bar / OHLCV</dt>
+      <dd>One day of trading squashed into five numbers: Open price, High, Low, Close, and Volume (shares traded). The system's decisions are based on daily bars.
+      <span class="eg">Partial bar: while the market is still open, today's bar is not finished — its "close" is just the current price. This matters; see the Results page.</span></dd>
+
+      <dt id="trend">Trend following</dt>
+      <dd>A very old strategy: buy things that have been going up, sell when they stop going up, and don't try to predict turning points. Wins are rare but large; losses are frequent but small.</dd>
+
+      <dt id="donchian">Donchian channel / breakout</dt>
+      <dd>The highest price and lowest price over the last N days. A "breakout" is when today's close goes above the highest high of the last 50 days — the signal to buy. Falling below the lowest low of the last 20 days is the signal to sell.</dd>
+
+      <dt id="sma">Moving average / regime filter</dt>
+      <dd>The average closing price over the last N days (here, 100). Used as a sanity check: only buy if the price is above its 100-day average, meaning the stock is broadly in an uptrend. "Regime" just means "what kind of market we're in".</dd>
+
+      <dt id="slippage">Slippage / basis points</dt>
+      <dd>The small amount you lose on every trade because you buy slightly above the quoted price and sell slightly below it. Measured in basis points (bps): 1 bp = 0.01%. This system assumes 5 bps each way, 10 bps per round trip.
+      <span class="eg">Why it matters: a strategy that earns 2 bps per trade but pays 10 bps in slippage loses money on every trade.</span></dd>
+
+      <dt id="bh">Buy-and-hold</dt>
+      <dd>The strategy of buying once and never selling. The simplest possible benchmark. If your clever system does not beat buy-and-hold, it is not clever.</dd>
+
+      <dt id="pdt">Pattern day trader (PDT) rule</dt>
+      <dd>A US rule: if your account is under $25,000, you may only make three same-day buy-and-sell round trips per five business days. Holding for days or weeks is unlimited, which suits this system.</dd>
+
+      <dt id="killswitch">Kill switch / drawdown limit</dt>
+      <dd>If the account loses more than 10% in one day, the program sells everything and refuses to buy again until tomorrow. Automatic, and no AI can turn it off.</dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Measurement words</h2>
+    <dl class="gl">
+      <dt id="backtest">Backtest</dt>
+      <dd>Replaying history with your rules to see what would have happened. "If I had followed this exact rule for the last four years, how much would I have made?" The only honest way to check a strategy before risking anything.</dd>
+
+      <dt id="lookahead">No-lookahead</dt>
+      <dd>The golden rule of backtesting: at each moment in the replay, the rule may only use information that existed at that moment. A decision made at Monday's close is acted on at Tuesday's open. Breaking this rule makes any strategy look brilliant, because it is secretly cheating.</dd>
+
+      <dt id="expectancy">Expectancy</dt>
+      <dd>The average profit or loss per trade, after costs. +5.5% expectancy means that on average, each trade made 5.5% on the money put into it. The single most important number. If it is negative, stop.</dd>
+
+      <dt id="winrate">Win rate</dt>
+      <dd>What share of trades made money. 55% here. On its own this tells you little — a strategy can win 90% of the time and still lose money if the 10% are big losses.</dd>
+
+      <dt id="pf">Profit factor</dt>
+      <dd>Total money won divided by total money lost. Above 1 means you made more than you lost. 2.7 here means $2.70 won for every $1 lost.</dd>
+
+      <dt id="drawdown">Drawdown / max drawdown</dt>
+      <dd>How far the account fell from its highest point before recovering. Max drawdown is the worst such fall. 12% here means at the worst moment, the account was 12% below its peak. This is the number that tells you how painful the strategy is to hold.</dd>
+
+      <dt id="sharpe">Sharpe ratio</dt>
+      <dd>Return divided by how bumpy the ride was. Higher is better. Above 1 is good, above 2 is exceptional. <strong>Warning:</strong> this site's Sharpe (2.4) is calculated per trade, not per day like professional funds report, so it is not comparable to published numbers.</dd>
+
+      <dt id="counterfactual">Counterfactual</dt>
+      <dd>"What would have happened otherwise." Used to price the news filter: run the same history twice, once with the filter and once without, and compare.</dd>
+
+      <dt id="precision">Block precision / base rate</dt>
+      <dd>Of the trades the AI news filter blocked, what share would have lost money? That is precision. The "base rate" is what you'd score by blocking at random — which is just the strategy's loss rate (44.7% here). A filter is only useful if it beats that.</dd>
+
+      <dt id="pvalue">p-value</dt>
+      <dd>The chance you'd see a result this good by pure luck. p = 0.17 means "about a 1-in-6 chance this is luck" — too high to trust. Scientists usually want under 0.05.</dd>
+
+      <dt id="survivorship">Survivorship bias</dt>
+      <dd>Testing only on companies that are still around and famous today. Of course Nvidia looks like a great pick in hindsight — you chose it knowing it won. A fair test would include the companies that went bust.</dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>AI and software words</h2>
+    <dl class="gl">
+      <dt id="llm">LLM / Claude</dt>
+      <dd>A large language model — the kind of AI behind ChatGPT and Claude. Very good at reading and writing text. Not good at arithmetic on long lists of numbers, which is why this system never asks it to do maths.</dd>
+
+      <dt id="sdk">Claude Agent SDK</dt>
+      <dd>A Python library from Anthropic that packages the same "agent" machinery that powers the Claude Code tool: it runs the loop of "think → call a tool → read the result → think again", and lets you plug in tools and safety hooks. See <a href="design.html#sdk">Build it → the Claude SDK</a>.</dd>
+
+      <dt id="agent">Agent / tool call</dt>
+      <dd>An AI that can <em>do</em> things, not just answer. It does them through "tool calls": structured requests like "place_stock_order(symbol=AAPL, notional=100)" that your code (or a server) actually executes.</dd>
+
+      <dt id="mcp">MCP</dt>
+      <dd>Model Context Protocol. A standard way to give an AI a set of tools. Alpaca publishes an official MCP server, so the AI got "get account", "place order", "close position" as ready-made tools without anyone writing wrappers.</dd>
+
+      <dt id="hook">Hook / PreToolUse</dt>
+      <dd>A piece of your own code that the SDK runs at a fixed moment — here, <em>just before</em> any tool call executes. The hook can say "deny", and the tool call never happens. This is how the risk limits are enforced on the AI: not by asking it nicely, but by intercepting it.</dd>
+
+      <dt id="veto">Veto / news filter</dt>
+      <dd>The one job the AI has in the live system: read recent headlines about a stock and say "don't buy this right now" if the news is bad. It can only say no. It can never say "buy".</dd>
+
+      <dt id="failopen">Fail-open / fail-closed</dt>
+      <dd>What happens when something breaks. Fail-open: "if the news check errors, go ahead anyway." Fail-closed: "if it errors, stop." The news filter fails open, so a broken AI can never stop a good trade. The risk limits fail closed.</dd>
+
+      <dt id="alpaca">Alpaca</dt>
+      <dd>An online broker with a free paper-trading account and a programming interface. The system places its orders and reads prices through Alpaca.</dd>
+
+      <dt id="redis">Redis / MongoDB</dt>
+      <dd>Two small databases. Redis holds today's fast-changing state (the day's starting balance, whether the kill switch has fired). MongoDB holds the permanent diary: one record for every hourly check, forever.</dd>
+
+      <dt id="docker">Docker</dt>
+      <dd>A way to package a program with everything it needs so it runs the same on any computer. The system runs as a handful of Docker containers on a home server.</dd>
+    </dl>
+  </section>
+
+  <div class="pager"><a href="results.html">← Results</a><a href="index.html">Overview →</a></div>
+  <footer><p>Project 10X · paper trading only · not financial advice.</p></footer>
+</div>
+</body>
+</html>

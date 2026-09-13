@@ -4,364 +4,173 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Results — Project 10X</title>
-<meta name="description" content="Every measured number in one place, what each does and does not support, and an unhedged list of what is still wrong.">
+<meta name="description" content="Every number the project produced, what each one does and doesn't prove, the three months of real running, the bug that explained it, and what's still wrong.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap">
 <link rel="stylesheet" href="assets/site.css">
 </head>
 <body>
-
-<nav class="sitenav">
-  <div class="sitenav-inner">
-    <a class="brand" href="index.html">Project <span>10X</span></a>
-    <a class="nl" href="index.html">Overview</a>
-    <a class="nl" href="approach.html">Approach</a>
-    <a class="nl" href="design.html">Design</a>
-    <a class="nl" href="evals.html">Evals</a>
-    <a class="nl" href="results.html" aria-current="page">Results</a>
-  </div>
-</nav>
-
+<nav class="sitenav"><div class="sitenav-inner">
+  <a class="brand" href="index.html">Project <span>10X</span></a>
+  <a class="nl" href="index.html">Overview</a>
+  <a class="nl" href="approach.html">Approach</a>
+  <a class="nl" href="design.html">Build it</a>
+  <a class="nl" href="evals.html">Testing</a>
+  <a class="nl" href="results.html" aria-current="page">Results</a>
+  <a class="nl" href="glossary.html">Glossary</a>
+</div></nav>
 <div class="page">
 
   <header class="masthead">
-    <p class="eyebrow">04 — Results</p>
-    <h1>What was actually achieved</h1>
-    <p class="standfirst">Two things: a trading system with a measured positive expectancy on
-    paper, and — more durably — a pair of harnesses that can tell whether any future change to it
-    is an improvement. The second is the one worth having.</p>
+    <p class="eyebrow">Results</p>
+    <h1>What actually happened</h1>
+    <p class="standfirst">Every number in one place, with what it does and doesn't mean. Then the part most write-ups leave out: three months of real running, and what went wrong.</p>
   </header>
 
   <section id="scoreboard">
     <h2>The scoreboard</h2>
-    <div class="table-wrap">
-      <table>
-        <caption>Every approach tried, with its measured outcome. Sources:
-        <code>CHANGELOG.md</code> and <code>eval-news.json</code>.</caption>
-        <thead>
-          <tr><th>Approach</th><th>Measured result</th><th>Verdict</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Intraday mean-reversion (RSI / Bollinger), LLM-driven</td>
-            <td class="mono neg">−0.08%/trade · PF 0.45 · ≈−50%</td>
-            <td><span class="pill killed">killed</span></td>
-          </tr>
-          <tr>
-            <td>Daily trend-following, 12 symbols</td>
-            <td class="mono pos">+7.7%/trade · PF ~3 · Sharpe ~1.8</td>
-            <td><span class="pill ok">edge found</span></td>
-          </tr>
-          <tr class="hi">
-            <td>Daily trend-following, 30 symbols <strong>(live)</strong></td>
-            <td class="mono pos">+5.5%/trade · PF 2.71 · Sharpe 2.45 · DD 12.4%</td>
-            <td><span class="pill live">shipped</span></td>
-          </tr>
-          <tr>
-            <td>Small-account options</td>
-            <td class="mono">unbacktestable · ~6.5% spreads</td>
-            <td><span class="pill killed">declined</span></td>
-          </tr>
-          <tr>
-            <td>News sentiment as a directional signal</td>
-            <td class="mono">not backtestable · latency-bound</td>
-            <td><span class="pill killed">never built</span></td>
-          </tr>
-          <tr>
-            <td>News sentiment as an entry veto</td>
-            <td class="mono">+0.03pp expectancy · precision 63.6% vs 44.7% (p≈0.17)</td>
-            <td><span class="pill">kept, not expanded</span></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
+    <div class="table-wrap"><table>
+      <caption>Every approach tried, and how it scored. "Per trade" means average profit or loss per trade after costs, in a four-year replay.</caption>
+      <thead><tr><th>Approach</th><th>Result</th><th>Outcome</th></tr></thead>
+      <tbody>
+        <tr><td>AI decides everything (bounce-buying, every 5 min)</td><td class="mono neg">−0.08% per trade · about −50% overall</td><td><span class="pill killed">deleted</span></td></tr>
+        <tr><td>Trend rule, 12 stocks</td><td class="mono pos">+7.7% per trade</td><td><span class="pill ok">works</span></td></tr>
+        <tr class="hi"><td>Trend rule, 30 stocks <strong>(what runs now)</strong></td><td class="mono pos">+5.5% per trade · worst dip 12%</td><td><span class="pill live">live</span></td></tr>
+        <tr><td>Options</td><td class="mono">can't be tested fairly · 6.5% cost per trade</td><td><span class="pill killed">declined</span></td></tr>
+        <tr><td>News as a reason to buy</td><td class="mono">too slow — price moves first</td><td><span class="pill killed">never built</span></td></tr>
+        <tr><td>News as a reason not to buy</td><td class="mono">+0.03 pts per trade · 7 of 11 blocks correct</td><td><span class="pill">kept, not expanded</span></td></tr>
+      </tbody>
+    </table></div>
     <div class="col">
-      <p>The 12-symbol and 30-symbol trend numbers differ because the universe changed, not
-      because the strategy did. Broadening from 12 to 30 names lowered per-trade expectancy from
-      7.7% to 5.5% while raising Sharpe from ~1.8 to 2.45 and holding max drawdown near 9–12%.
-      That is diversification doing exactly what it is supposed to do: less return per bet, more
-      return per unit of risk.</p>
-      <p>It also partly answers the survivorship objection. The re-test held up
-      <em>including its losers</em> — TSLA, UNH and V all lost money in the window and the
-      portfolio edge survived them.</p>
+      <p>Going from 12 stocks to 30 lowered the profit per trade (7.7% → 5.5%) but made the ride smoother. That's diversification doing its job: a bit less per bet, a lot less risk per bet. It also helps with a fair objection — the 30-stock replay includes Tesla, UnitedHealth and Visa, all of which lost money over the period, and the total still came out well ahead.</p>
     </div>
   </section>
 
   <section id="live-shape">
-    <h2>The shape of the live strategy</h2>
+    <h2>What the live rule looks like</h2>
     <dl class="kpis">
-      <div class="kpi"><div class="k">Win rate</div><div class="v">55.3%</div>
-        <div class="s">141 winners of 255</div></div>
-      <div class="kpi"><div class="k">Average win</div><div class="v pos">+15.8%</div>
-        <div class="s">no take-profit — winners run</div></div>
-      <div class="kpi"><div class="k">Average loss</div><div class="v neg">−7.2%</div>
-        <div class="s">channel exit, not the 20% stop</div></div>
-      <div class="kpi"><div class="k">Avg hold</div><div class="v">51</div>
-        <div class="s">daily bars ≈ 10 weeks</div></div>
+      <div class="kpi"><div class="k">Trades that won</div><div class="v">55%</div><div class="s">barely better than a coin flip</div></div>
+      <div class="kpi"><div class="k">Average win</div><div class="v pos">+15.8%</div><div class="s">winners are allowed to run</div></div>
+      <div class="kpi"><div class="k">Average loss</div><div class="v neg">−7.2%</div><div class="s">losers are cut early</div></div>
+      <div class="kpi"><div class="k">Typical hold</div><div class="v">10 wks</div><div class="s">about 51 trading days</div></div>
     </dl>
-
     <div class="col">
-      <p>This is the canonical trend-following profile and it is worth reading carefully, because
-      it explains every design choice upstream of it. The win rate is barely better than a coin
-      flip. The edge lives entirely in the <strong>2.2:1 ratio between average win and average
-      loss</strong> — which exists only because there is no take-profit and the exit is a
-      trailing channel.</p>
-      <p>Two implications follow. First, capping winners would destroy the edge, which is why
-      the strategy has no profit target at all. Second, a system like this trades rarely — 255
-      trades across 30 symbols over roughly four years is about two per symbol per year. Activity
-      is not the goal, and the long stretches where the journal records nothing are the strategy
-      working.</p>
-    </div>
-
-    <div class="note">
-      <span class="label">Why the 20% catastrophic stop almost never fires</span>
-      <p>Average loss is 7.2% against a 20% stop. The trailing channel exit is nearly always
-      faster, which means the wide stop is a backstop against an overnight gap rather than a
-      strategy parameter. That is deliberate — a tight stop on a multi-week trend system just
-      converts winners into losers via noise.</p>
+      <p>This is the classic shape of trend following, and it explains every design choice upstream. The rule is right only slightly more than half the time. All of the profit comes from winners being about twice as big as losers — which only happens because there is no "take profit" point, and the exit is a trailing 20-day low.</p>
+      <p>Two consequences. Capping winners would destroy the edge, which is why there's no profit target. And a rule like this trades rarely: 256 trades across 30 stocks in four years is about two per stock per year. Long stretches where nothing happens are the rule working, not the rule broken.</p>
     </div>
   </section>
 
   <section id="live">
-    <h2>The live forward result</h2>
+    <h2>Three months of real running</h2>
     <div class="col">
-      <p>Everything above this point is a backtest. In September 2026 the obvious question finally
-      got asked — what has the agent actually done? — and the answer is the most valuable data in
-      the project, because it is the only part nobody could have fitted.</p>
-      <p>The agent had been running continuously for three months on a $1,000 paper account: 481
-      ticks, 23 buys, 21 sells, 16 news vetoes, fully deployed in 10 positions.</p>
+      <p>Everything above is a replay. In September 2026 the obvious question finally got asked: the bot has been running since June — what has it actually done? This is the most valuable data on this site, because it's the only part nobody could have fitted after the fact.</p>
+      <p>The set-up: a $1,000 fake account, running continuously for three months, checking every hour — 481 checks, 23 buys, 21 sells, 16 news blocks, fully invested in 10 stocks.</p>
     </div>
-
     <dl class="kpis">
-      <div class="kpi"><div class="k">The agent</div><div class="v neg">+0.82%</div>
-        <div class="s">93 days, 2026-06-10 → 09-11</div></div>
-      <div class="kpi"><div class="k">Its own 30 names</div><div class="v pos">+5.70%</div>
-        <div class="s">equal weight, held throughout</div></div>
-      <div class="kpi"><div class="k">SPY</div><div class="v">+4.73%</div>
-        <div class="s">same window</div></div>
-      <div class="kpi"><div class="k">Max drawdown</div><div class="v">5.61%</div>
-        <div class="s">peak $1,056.23</div></div>
+      <div class="kpi"><div class="k">The bot</div><div class="v neg">+0.82%</div><div class="s">93 days, 10 June → 11 Sept 2026</div></div>
+      <div class="kpi"><div class="k">Just holding its 30 stocks</div><div class="v pos">+5.70%</div><div class="s">equal amounts, never sold</div></div>
+      <div class="kpi"><div class="k">The S&amp;P 500</div><div class="v">+4.73%</div><div class="s">same period</div></div>
+      <div class="kpi"><div class="k">Worst dip</div><div class="v">5.6%</div><div class="s">peak $1,056</div></div>
     </dl>
-
     <div class="verdict no">
       <span class="label">It lost to doing nothing</span>
-      <p>Underperformed a passive basket of its own universe by <span class="num">4.9</span>
-      percentage points, and SPY by <span class="num">3.9</span>. Against a backtest implying
-      roughly 39%/yr, this is the gap that matters — and it is not a subtle one.</p>
+      <p>The bot underperformed a do-nothing basket of its own stocks by about 5 percentage points, and the S&amp;P 500 by about 4. Against a replay implying something like 39% a year, that's not a rounding error.</p>
     </div>
 
-    <h3>The cause was an implementation bug, not the strategy</h3>
+    <h3>The cause was a bug, not the rule</h3>
     <div class="col">
-      <p>The live trade log did not look like the backtest's. Three signals, all pointing the
-      same way:</p>
+      <p>The live trade log didn't look like the replay's. Three clues, all pointing the same way:</p>
       <ul>
-        <li><strong>Same-day round trips.</strong> SPY ran
-        <code>S07-29 B07-29 S07-30 B08-04 S09-01 B09-09 S09-10</code>. Sold and re-bought within
-        one session. Same pattern on AAPL, AMD, QQQ and LLY.</li>
-        <li><strong>Every exit was intraday.</strong> All 21 landed between 13:00 and 18:00 UTC.
-        The US market closes at 20:00. Not one exit happened after a close.</li>
-        <li><strong>Trade rate ~2.75× the backtest.</strong> 44 order actions in 93 days against
-        the ~16 the backtested frequency implies.</li>
+        <li><strong>It sold and re-bought the same stock on the same day.</strong> For the S&amp;P 500 fund it went: sell 29 July, buy 29 July, sell 30 July, buy 4 Aug, sell 1 Sept, buy 9 Sept, sell 10 Sept. Same pattern on Apple, AMD and others.</li>
+        <li><strong>Every sale happened in the middle of the trading day.</strong> All 21 of them, between 9am and 2pm New York time. None after the market closed.</li>
+        <li><strong>It traded almost three times as often as the replay predicted.</strong> 44 buy-or-sell actions in 93 days, where the replay suggests about 16.</li>
       </ul>
-      <p>The mechanism: <code>get_history(..., "1Day")</code> returns today's <em>partial</em>
-      bar while the session is open, so <code>desired_long()</code> was reading
-      <code>close.iloc[-1]</code> as a close when it was the live intraday price. An intraday dip
-      below the prior 20-day low flipped the signal and triggered a <code>trend_break</code> exit
-      the backtester — which only ever evaluates true daily closes — can never take. Price
-      recovered, the next tick bought back in, and the spread was paid twice.</p>
+      <p>What was happening: the rule is meant to look at each day's <em>closing</em> price. But when the program fetched "daily" prices during the trading day, the last entry was today's — unfinished, with the current price sitting where the close should be. A brief morning dip below the 20-day low made the rule say "sell". An hour later, with the price back up, it said "buy". Two trades, two lots of costs, no gain.</p>
     </div>
-
     <div class="note">
-      <span class="label">The number that makes it unambiguous</span>
-      <p>The ten names the agent was holding — AAPL, BAC, CRM, DIS, JNJ, JPM, MA, MSFT, NVDA, V —
-      returned an average of <strong>+16.8%</strong> over the live window. Simply holding exactly
-      what it held would have made 16.8%. It made 0.82%. The stock selection worked; the churn
-      ate all of it.</p>
+      <span class="label">The number that makes it obvious</span>
+      <p>The ten stocks the bot was holding — Apple, Bank of America, Salesforce, Disney, Johnson &amp; Johnson, JPMorgan, Mastercard, Microsoft, Nvidia, Visa — rose an average of <strong>16.8%</strong> over those three months. Simply holding exactly what it held would have made 16.8%. It made 0.82%. The stock picking worked. The constant selling and re-buying ate all of it.</p>
     </div>
-
     <div class="col">
-      <p>Fixed in <code>334750e</code>: <code>completed_bars()</code> drops the in-progress bar
-      before the channel read, with a regression test that reproduces the bug and asserts
-      live/backtest signal equivalence on closed data.</p>
-      <p>The deeper failure is not the two-line bug. It is that <strong>nothing in the system was
-      comparing live behaviour against backtested behaviour</strong>. A project whose entire
-      thesis is "measure before you trust it" ran a different strategy than the one it validated,
-      for three months, and the only reason it surfaced was someone writing documentation.</p>
+      <p>Fixed on 12 September (commit <code>334750e</code>): drop today's unfinished bar before asking the rule. A test now reproduces the bug — feed it a mid-day dip, confirm the old code sells and the new code holds.</p>
+      <p>The real lesson isn't the two-line fix. It's that <strong>nothing was checking whether the live bot behaved like the replay</strong>. A project whose whole point is "measure before you trust" ran a different strategy from the one it tested, for three months, and only noticed because someone sat down to write documentation.</p>
     </div>
   </section>
 
   <section id="engineering">
-    <h2>What was achieved on the engineering side</h2>
-
+    <h2>What was achieved, engineering-wise</h2>
     <div class="cards">
-      <div class="card">
-        <div class="k">Reproducible edge</div>
-        <h3>One strategy definition, two consumers</h3>
-        <p><code>desired_long()</code> is called by both the live engine and the backtester. There
-        is no separate live implementation to drift from the tested one — the thing measured is
-        literally the thing that runs.</p>
-      </div>
-      <div class="card">
-        <div class="k">Model isolation</div>
-        <h3>An LLM that cannot exceed its brief</h3>
-        <p>The news component has no code path that increases risk. No prompt injection, jailbreak
-        or malformed response can open a position, raise a limit or skip a stop, because those
-        branches do not exist.</p>
-      </div>
-      <div class="card">
-        <div class="k">Auditability</div>
-        <h3>Decisions replayable months later</h3>
-        <p>Every tick's document carries the headlines, model and prompt version behind each
-        verdict. Production decisions can be re-scored against a future prompt — the journal is
-        an eval corpus, not just a log.</p>
-      </div>
-      <div class="card">
-        <div class="k">Falsifiability</div>
-        <h3>Harnesses that can say no</h3>
-        <p>Both measurement tools returned unwelcome answers and both were acted on. A harness
-        that has never overruled its author is not evidence of a good strategy; it is evidence of
-        a decorative harness.</p>
-      </div>
+      <div class="card"><div class="k">One rule, two uses</div><h3>What was tested is what runs</h3><p>The live program imports the trading rule from the replay tool. There is no separate "live" version that can drift away from the tested one.</p></div>
+      <div class="card"><div class="k">AI on a leash</div><h3>An AI that can't exceed its job</h3><p>No prompt trick, bad answer, or malformed reply can open a position, raise a limit, or skip a stop. Those code paths don't exist.</p></div>
+      <div class="card"><div class="k">A diary you can re-judge</div><h3>Every decision is explainable later</h3><p>Each record stores the headlines Claude saw and which prompt version judged them, so old decisions can be re-scored with a new prompt.</p></div>
+      <div class="card"><div class="k">Tests that can say no</div><h3>Both tools overruled their author</h3><p>A test that has never told you something you didn't want to hear isn't a test — it's decoration.</p></div>
     </div>
-
     <div class="col">
-      <p>Two reusable patterns came out of this that are not specific to trading. The
-      <code>PreToolUse</code> gate is a general answer to constraining an agent's actions:
-      intercept the tool call, evaluate it with a pure function, deny before it reaches the
-      server. And the counterfactual A/B is a general answer to valuing a model component that
-      can only subtract — run both arms through one simulator and diff the outcomes rather than
-      grading the classifier.</p>
+      <p>Two ideas here travel well beyond trading. The <a href="design.html#sdk">hook</a>: stop an AI doing something by intercepting the action, not by asking. And the <a href="evals.html#method">run-it-twice test</a>: price an AI feature that can only say "no" by comparing totals with and without it, rather than grading its answers.</p>
     </div>
   </section>
 
   <section id="claims">
-    <h2>What the numbers do and don't support</h2>
-
+    <h2>What the numbers do and don't prove</h2>
     <div class="verdict yes">
       <span class="label">Supported</span>
-      <p>That the daily Donchian strategy had positive expectancy net of modelled costs over this
-      universe and window. That the original intraday strategy did not, by a margin too large to
-      be sampling noise. That the news veto's cost is near zero. That the risk layer holds — no
-      limit has ever been breached by a model action in either mode.</p>
+      <p>That the trend rule made money after costs in this replay, over these stocks and years. That the first strategy did not, by a margin far too large to be luck. That the news filter costs roughly nothing. That the safety limits hold — no limit has ever been breached by an AI action in either version.</p>
     </div>
-
     <div class="verdict no">
       <span class="label">Not supported</span>
-      <p>That this makes money going forward — and this is no longer merely unproven. Over 93
-      days live it returned +0.82% against +5.70% for holding the same names. That window is too
-      short and too regime-specific to condemn the strategy, but it is real out-of-sample
-      evidence and it points the wrong way.</p>
-      <p>Also not supported: that the news filter has predictive edge — the eval hints at it but
-      n=11 cannot establish it. That the Sharpe figure is comparable to a fund's, since it is a
-      per-trade annualisation rather than a daily-returns Sharpe. That the strategy generalises
-      beyond liquid US mega-caps in a bull market, which is the only regime it has been seriously
-      tested in.</p>
+      <p>That this makes money going forward — and this is no longer merely untested. Ninety-three days of real running returned +0.82% against +5.70% for holding. That window is too short to condemn the rule (and a bug explains most of it), but it's real, it's out-of-sample, and it points the wrong way. Also not supported: that the news filter predicts anything; that the "Sharpe" figure is comparable to a fund's (it's calculated differently); that the rule works outside big US companies in a rising market, which is the only place it's been tested.</p>
     </div>
-
     <div class="col">
-      <p>The gap between those two boxes is the honest position: this project produced good
-      evidence about <em>which of its own components were worth building</em>, and weak evidence
-      about whether the result is profitable. Those are different claims and the second one needs
-      years of forward data, not a better backtest.</p>
+      <p>The gap between those two boxes is the honest position. This project produced good evidence about <em>which of its own parts were worth building</em>, and weak evidence about whether the result makes money. Those are different claims, and the second needs years of forward data, not a better replay.</p>
     </div>
   </section>
 
   <section id="wrong">
-    <h2>What is still wrong with it</h2>
-    <div class="col">
-      <p>Unhedged, because a write-up that lists only strengths is marketing.</p>
-    </div>
+    <h2>What's still wrong with it</h2>
+    <div class="col"><p>Listed plainly, because a write-up that only lists strengths is an advert.</p></div>
 
-    <h3>Measurement</h3>
-    <div class="col">
-      <ul>
-        <li>The trend edge was measured on <strong>mega-cap survivors in a bullish window</strong>
-        — the most flattering possible sample. Real validation needs out-of-sample data, a
-        delisted-inclusive universe, and walk-forward testing.</li>
-        <li>The eval's hindsight contamination is <strong>structural</strong>. No amount of
-        compute fixes it; only forward measurement on unseen dates does.</li>
-        <li>Sharpe is per-trade annualised, not daily-returns. Do not compare it to published
-        figures.</li>
-      </ul>
-    </div>
+    <h3>About the testing</h3>
+    <div class="col"><ul>
+      <li>The replay used <strong>famous companies that still exist, during good years</strong> — the kindest possible sample. A proper test needs companies that went bust, and a bad year or two.</li>
+      <li>The AI test's flaw (Claude remembers the news) can't be fixed with more computing. Only running forward on dates Claude hasn't seen escapes it.</li>
+      <li>The "Sharpe ratio" is calculated per trade, not per day. Don't compare it to published fund numbers.</li>
+    </ul></div>
 
-    <h3>Live mechanics</h3>
-    <div class="col">
-      <ul>
-        <li><strong>Nothing compares live behaviour to backtested behaviour.</strong> This is
-        the gap that let the partial-bar bug run for three months. Trade rate, holding period and
-        exit-time-of-day are all cheap to assert against the backtest's distribution, and none of
-        them were.</li>
-        <li><strong>No resting stops.</strong> Fractional positions cannot carry brackets, so
-        exits depend on the engine ticking. Overnight and weekend gap risk is unhedged.</li>
-        <li><strong>Stale drawdown anchor</strong> after a mid-session balance change trips a
-        false kill-switch, and recovery is manual Redis surgery.</li>
-        <li><strong>No liveness assertion</strong> that the scheduler interval actually fired.
-        The bug class that once left agents ticking only on restart would not be caught
-        automatically today.</li>
-        <li><strong>The trend engine does not cancel stale orders.</strong> The legacy LLM path
-        does; the reconciliation was never ported across.</li>
-        <li><strong>No startup reconciliation</strong> of broker positions against local
-        expectations.</li>
-        <li><code>cancel_all_orders</code> is exposed to the legacy agent but matches neither risk-hook
-        matcher, so the gate never sees it. Benign today — it would be allowed anyway — but the
-        code reads as though it is gated.</li>
-      </ul>
-    </div>
+    <h3>About the live program</h3>
+    <div class="col"><ul>
+      <li><strong>Nothing compares live behaviour to the replay.</strong> This is the gap that let the timing bug run for three months. Trades per week, hold length and time-of-day of exits are all cheap to check, and none were.</li>
+      <li><strong>No automatic stop-loss at the broker.</strong> Fractional shares can't have one, so exits depend on the program running. If it's down over a weekend and a stock gaps lower on Monday, nothing catches it.</li>
+      <li><strong>Changing the balance mid-day can trip the kill switch falsely</strong>, and recovery is manual.</li>
+      <li><strong>No check that the hourly timer actually fires.</strong> A bug once left it only running on restart, and nothing would catch that automatically today.</li>
+      <li>The live program <strong>doesn't cancel its own stale orders</strong>; the old AI version did.</li>
+      <li>28 buy orders failed with "insufficient buying power" — the 2% cash cushion isn't quite enough on some fills.</li>
+    </ul></div>
 
-    <h3>Structural</h3>
-    <div class="col">
-      <ul>
-        <li>Single process, single account. No horizontal story, and none needed.</li>
-        <li>The Alpaca MCP service is currently unbuildable from upstream <code>main</code>.</li>
-        <li>Beating buy-and-hold consistently is hard. The realistic win here is
-        <em>similar return at materially lower drawdown and exposure</em>, plus the framework to
-        keep testing.</li>
-      </ul>
-    </div>
+    <h3>About the setup</h3>
+    <div class="col"><ul>
+      <li>One program, one account. No plan for more, and no need.</li>
+      <li>The AI-agent's tool server can't currently be built from its upstream repository.</li>
+      <li>Beating buy-and-hold consistently is hard. The realistic win is <em>similar return with much less pain</em>, plus a way to keep checking.</li>
+    </ul></div>
   </section>
 
   <section id="next">
-    <h2>Where it goes next</h2>
+    <h2>What's next</h2>
     <div class="col">
-      <p>The measurement work points at an obvious ordering, and it is not "add more
-      strategies".</p>
-      <p><strong>Verify the fix forward.</strong> The partial-bar fix is deployed but unproven.
-      The check is mechanical: trade rate should fall toward roughly 16 actions per 93 days, exits
-      should cluster after the close rather than mid-session, and average hold should climb toward
-      the backtest's 51 bars. If it does not, the divergence has another cause.</p>
-      <p><strong>Then close the remaining live-mechanics gaps.</strong> Startup reconciliation, per-tick
-      stale-order cancellation in the trend path, a liveness assertion on the scheduler, and
-      anchor invalidation. These are small, they are known, and every one of them is a way the
-      system could lose money for reasons unrelated to whether the strategy is any good.</p>
-      <p><strong>Then earn the right to trust the edge.</strong> Walk-forward testing on a
-      universe that includes delisted names, and out-of-sample windows that include a genuine
-      bear regime. The current numbers are a hypothesis, not a result.</p>
-      <p><strong>Leave the news filter alone.</strong> The eval says it is worth approximately
-      nothing, measured generously. The correct response to that is not a better prompt — it is
-      to stop spending attention there until something changes.</p>
+      <p><strong>Confirm the fix worked.</strong> Over the coming weeks: trades should drop to roughly 16 per 93 days, sales should happen after the close instead of mid-day, and holds should lengthen toward the replay's ten weeks. If those don't move, something else is wrong.</p>
+      <p><strong>Then close the live gaps above</strong> — the weekly live-vs-replay check first, because it's the one that would have caught this.</p>
+      <p><strong>Then earn the right to trust the rule.</strong> Re-run the replay on a stock list that includes companies that failed, across a bad year, in rolling windows. The current numbers are a hypothesis, not a result.</p>
+      <p><strong>Leave the news filter alone.</strong> The test says it's worth about nothing, measured generously. The right response is not a better prompt — it's to stop spending attention there until something changes.</p>
     </div>
-
-    <div class="note">
-      <span class="label">The one-line summary</span>
-      <p>A project whose most valuable output was a measurement that told its author to delete
-      the thing he had just built — twice.</p>
+    <div class="plain">
+      <div class="k">In one sentence</div>
+      <p>A project whose most useful output was a test that told its author to delete what he'd just built — twice — and then a third look that found the live version wasn't running what was tested.</p>
     </div>
   </section>
 
-  <div class="pager">
-    <a href="evals.html">← Evals</a>
-    <a href="index.html">Overview →</a>
-  </div>
-
-  <footer>
-    <p>Project 10X · paper trading only, no real capital · this is an engineering write-up, not
-    financial advice. Automated trading can lose money quickly; the risk layer exists precisely
-    because the strategy might be wrong.</p>
-  </footer>
-
+  <div class="pager"><a href="evals.html">← Testing</a><a href="glossary.html">Glossary →</a></div>
+  <footer><p>Project 10X · paper trading only, no real money · this is a write-up of an engineering project, not financial advice.</p></footer>
 </div>
 </body>
 </html>

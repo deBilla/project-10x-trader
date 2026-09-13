@@ -3,427 +3,226 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Evals — Project 10X</title>
-<meta name="description" content="Two measurement harnesses: a no-lookahead backtester for the strategy, and a counterfactual A/B that prices an LLM component which can only subtract.">
+<title>Testing — Project 10X</title>
+<meta name="description" content="How the trading rule was tested by replaying the past, and how the AI news filter was tested when a normal replay couldn't be trusted — in plain words.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap">
 <link rel="stylesheet" href="assets/site.css">
 </head>
 <body>
-
-<nav class="sitenav">
-  <div class="sitenav-inner">
-    <a class="brand" href="index.html">Project <span>10X</span></a>
-    <a class="nl" href="index.html">Overview</a>
-    <a class="nl" href="approach.html">Approach</a>
-    <a class="nl" href="design.html">Design</a>
-    <a class="nl" href="evals.html" aria-current="page">Evals</a>
-    <a class="nl" href="results.html">Results</a>
-  </div>
-</nav>
-
+<nav class="sitenav"><div class="sitenav-inner">
+  <a class="brand" href="index.html">Project <span>10X</span></a>
+  <a class="nl" href="index.html">Overview</a>
+  <a class="nl" href="approach.html">Approach</a>
+  <a class="nl" href="design.html">Build it</a>
+  <a class="nl" href="evals.html" aria-current="page">Testing</a>
+  <a class="nl" href="results.html">Results</a>
+  <a class="nl" href="glossary.html">Glossary</a>
+</div></nav>
 <div class="page">
 
   <header class="masthead">
-    <p class="eyebrow">03 — Evals</p>
-    <h1>Measuring the strategy, then measuring the model</h1>
-    <p class="standfirst">Two harnesses, built months apart, for two different questions. The
-    first decided what the system trades. The second decided how much of the language model to
-    keep. Both returned answers that cost their author something.</p>
-
+    <p class="eyebrow">Testing</p>
+    <h1>How we know what works</h1>
+    <p class="standfirst">Two testing tools, for two different questions. The first decided which rule the bot trades. The second decided how much to trust the AI. Both gave answers I didn't want.</p>
     <div class="toc">
       <div class="k">On this page</div>
       <ol>
-        <li><a href="#backtester">The backtester — five disciplines</a></li>
-        <li><a href="#why-hard">Why the LLM needed a different harness</a></li>
-        <li><a href="#framing">Framing the question correctly</a></li>
-        <li><a href="#method">Method: two arms, one simulator</a></li>
-        <li><a href="#lookahead">Keeping the future out</a></li>
-        <li><a href="#attribution">Attribution — the part everyone gets wrong</a></li>
-        <li><a href="#numbers">What it returned</a></li>
-        <li><a href="#contamination">Stated contamination</a></li>
+        <li><a href="#replay">The replay tool: "would this rule have made money?"</a></li>
+        <li><a href="#replay-result">What the replay said</a></li>
+        <li><a href="#why-hard">Why the AI needed a different test</a></li>
+        <li><a href="#question">Getting the question right</a></li>
+        <li><a href="#method">The method: run it twice</a></li>
+        <li><a href="#numbers">What it found</a></li>
+        <li><a href="#flaw">The known flaw</a></li>
       </ol>
     </div>
   </header>
 
-  <section id="backtester">
-    <h2>The backtester — five disciplines</h2>
+  <section id="replay">
+    <h2>1. The replay tool</h2>
     <div class="col">
-      <p>A walk-forward bar simulator over historical OHLCV. It produces closed trades with net
-      returns, and a metrics layer turns those into expectancy, profit factor, compounded return,
-      max drawdown and an annualised per-trade Sharpe. Five rules give the output its
-      credibility.</p>
+      <p>A <a class="term" href="glossary.html#backtest">backtest</a> is a replay of the past. You take years of daily prices, walk through them one day at a time, apply your rule at each step exactly as the bot would, and total up what would have happened. Simple idea, easy to get wrong. Five rules keep it honest:</p>
     </div>
 
-    <div class="finding">
-      <div class="finding-n">01</div>
-      <div>
-        <h3>No lookahead</h3>
-        <p>A signal computed at bar <em>i</em>'s close is acted on at bar <em>i+1</em>'s open.
-        A <code>pending</code> variable carries the decision across the boundary, so there is no
-        code path in which a decision can consult the bar it executes on.</p>
-      </div>
-    </div>
+    <div class="finding"><div class="finding-n">1</div><div>
+      <h3>Never peek at tomorrow</h3>
+      <p>A decision made at Monday's close is acted on at Tuesday's opening price — never at Monday's close, which you couldn't have got. Break this rule and every strategy looks brilliant, because it's quietly cheating.</p>
+    </div></div>
+    <div class="finding"><div class="finding-n">2</div><div>
+      <h3>Charge for every trade</h3>
+      <p>Assume you buy slightly above the price and sell slightly below it — 0.05% each way, 0.10% per round trip. This one line is what exposed the first strategy: it earned about 0.02% per trade and paid 0.10% to do it.</p>
+    </div></div>
+    <div class="finding"><div class="finding-n">3</div><div>
+      <h3>Fix the prices for stock splits</h3>
+      <p>When a company splits its shares 10-for-1, the raw price drops 90% overnight with nothing actually lost. Unadjusted, that looks like a crash and wrecks the replay. An early run showed Nvidia "losing" 78% this way before it was caught.</p>
+    </div></div>
+    <div class="finding"><div class="finding-n">4</div><div>
+      <h3>Don't trade before the rule has enough history</h3>
+      <p>The rule needs 100 days of prices for its average. The replay refuses to trade for the first 100 days rather than pretending.</p>
+    </div></div>
+    <div class="finding"><div class="finding-n">5</div><div>
+      <h3>Always compare with doing nothing</h3>
+      <p>For each stock, and for the whole basket, print what buying once and holding would have made. If your clever rule doesn't beat that, it isn't clever. The tool ends with a blunt line: "positive edge after costs" or "NO edge".</p>
+    </div></div>
+  </section>
 
-    <div class="finding">
-      <div class="finding-n">02</div>
-      <div>
-        <h3>Modelled costs</h3>
-        <p>5 bps slippage per side by default, applied to entry and exit, commission zero for
-        Alpaca. That gives a 10 bps round-turn drag subtracted from every trade's gross return.
-        This single parameter is what exposed the original strategy: it had roughly 2 bps of
-        gross edge to pay a 10 bps bill.</p>
-      </div>
-    </div>
-
-    <div class="finding">
-      <div class="finding-n">03</div>
-      <div>
-        <h3>Split and dividend adjustment</h3>
-        <p>History is fetched with <code>adjustment=ALL</code>. Without it a stock split appears
-        as a price crash — an unadjusted NVDA showed a fake <span class="num neg-t">−78%</span>
-        and silently corrupted an entire run before it was caught. Any backtest spanning a split
-        without adjustment is measuring a fiction.</p>
-      </div>
-    </div>
-
-    <div class="finding">
-      <div class="finding-n">04</div>
-      <div>
-        <h3>Warmup</h3>
-        <p>Both simulators compute the longest indicator window they need and refuse to trade
-        before it. A 100-day SMA cannot produce a signal on day 40, and a harness that pretends
-        otherwise reports trades that could never have happened.</p>
-      </div>
-    </div>
-
-    <div class="finding">
-      <div class="finding-n">05</div>
-      <div>
-        <h3>Compare against buy-and-hold</h3>
-        <p>Printed per symbol and for the portfolio. A strategy that underperforms simply holding
-        the same basket has not found an edge, however good its Sharpe looks in isolation. The
-        runner ends with a blunt verdict line — positive expectancy after costs, or
-        <em>"NO edge"</em>. That line is what killed version one.</p>
-      </div>
-    </div>
-
-    <h3>What it says about the live strategy</h3>
+  <section id="replay-result">
+    <h2>2. What the replay said</h2>
     <div class="col">
-      <p>Run over 1,500 days across the 30-symbol universe, at 5 bps per side and 10% position
-      sizing:</p>
+      <p>Over 1,500 days (about four years) across all 30 stocks, charging costs, putting 10% of the account in each trade:</p>
     </div>
-
     <div class="code wide">
-<pre>ALL   256 trades   55% win   <span class="c-acc">+5.52%</span>/trade   PF 2.73   totRet <span class="c-acc">+290.36%</span>   maxDD 11%   B&amp;H <span class="c-dim">+175.83%</span>
+<pre>256 trades   55% won   average <span class="c-acc">+5.52%</span> per trade   $2.73 won per $1 lost
+total return <span class="c-acc">+290%</span>   worst dip 11%   just holding: <span class="c-dim">+176%</span>
 VERDICT: POSITIVE edge (after modeled costs)</pre>
     </div>
-
     <div class="col">
-      <p>So the strategy does clear its own benchmark on this data — +290% against +176% for
-      holding the same names, at 11% maximum drawdown against the roughly 30% an equity basket
-      took through 2022. That is the claim the project makes: comparable return, materially less
-      pain.</p>
-      <p>Read the per-symbol column carefully though, because it is not an apples-to-apples
-      comparison. Strategy returns compound 256 sequential trades at 10% sizing; the buy-and-hold
-      column is 100% allocation held throughout. NVDA shows +22.55% for the strategy against
-      +1053.75% held — the strategy was only ever 10% exposed to it, and only while the channel
-      said so.</p>
-      <p>And none of it survived contact with the live implementation. See
-      <a href="results.html#live">the live forward result</a>.</p>
+      <p>In plain terms: the rule made money, it beat just holding the stocks, and it did so with a much smaller worst-case dip (11% versus the roughly 30% an ordinary stock basket fell in 2022). That's the claim this project makes — similar gains, much less stomach-churning.</p>
+      <p>Two cautions. The "+290%" compounds 256 small trades at 10% size each, while "+176%" is for holding 100% — so they're not like-for-like per stock, only for the whole approach. And this replay was on famous, still-existing companies during mostly good years. See <a href="results.html#claims">Results</a> for what it does and doesn't prove.</p>
+    </div>
+    <div class="plain">
+      <div class="k">And the first strategy?</div>
+      <p>Same tool, same years: <strong>−0.08% per trade</strong>, $0.45 won per $1 lost, roughly −50% overall. It was removed from the live program the same day.</p>
     </div>
   </section>
 
   <section id="why-hard">
-    <h2>Why the LLM needed a different harness</h2>
+    <h2>3. Why the AI needed a different test</h2>
     <div class="col">
-      <p>The trend engine was backtestable because its rules are deterministic functions of
-      price. News sentiment is not. You cannot replay a language model over history and call the
-      result a signal test, for two reasons that compound:</p>
-      <p><strong>The model knows the future.</strong> It was trained on text published after the
-      dates you are replaying. Ask it about NVDA in February 2023 and it is not predicting, it is
-      remembering.</p>
-      <p><strong>News alpha decays faster than the harness can resolve.</strong> By the time a
-      headline is fetched and scored, the move is priced. A daily-bar simulator cannot represent
-      that at all.</p>
-      <p>So the question was reframed. Not <em>"can this predict?"</em> — which is unanswerable
-      offline — but <em>"what do its interventions cost?"</em> That question is answerable,
-      because the component's only power is to block.</p>
+      <p>The trading rule could be replayed because it's just arithmetic on prices. The news filter can't be, for two reasons:</p>
+      <p><strong>Claude knows the ending.</strong> It was trained on text from those years. Ask it about Nvidia in early 2023 and it isn't predicting — it's remembering. Any replay that asks "was the AI right?" is rigged in the AI's favour.</p>
+      <p><strong>News moves prices fast.</strong> By the time a headline is read and scored, the price has already reacted. A daily replay can't see that at all.</p>
+      <p>So instead of asking "is it right?", the test asks "what did its decisions cost?" That question can be answered, because the filter can only do one thing: block a purchase.</p>
     </div>
   </section>
 
-  <section id="framing">
-    <h2>Framing the question correctly</h2>
+  <section id="question">
+    <h2>4. Getting the question right</h2>
     <div class="col">
-      <p>The filter can only veto. That asymmetry determines the metric entirely:</p>
+      <p>The filter can only say no. That makes the two kinds of mistake very unequal:</p>
       <ul>
-        <li>A <strong>false positive</strong> kills a trade drawn from a
-        <span class="num pos-t">+5.5%</span>-expectancy distribution. That costs real money.</li>
-        <li>A <strong>false negative</strong> merely returns you to the unfiltered baseline. That
-        costs nothing at all.</li>
+        <li>Blocking a trade that would have <strong>won</strong> costs real money — that trade averaged +5.5%.</li>
+        <li>Failing to block a trade that <strong>lost</strong> costs nothing extra — you're simply back where you'd be without the filter.</li>
       </ul>
-      <p>Accuracy is therefore the wrong measure — it weights both errors equally when they are
-      not remotely equal. The right one is <strong>block precision</strong>: of the blocks that
-      can be priced against a baseline trade, what share landed on a trade that would have
-      lost?</p>
+      <p>So "how accurate is it?" is the wrong question — it counts both mistakes equally. The right question is: <strong>of the trades it blocked, what share would have lost money?</strong> That's called block <a class="term" href="glossary.html#precision">precision</a>.</p>
     </div>
-
     <div class="note">
-      <span class="label">The bar is not 50%</span>
-      <p>Blocking at <em>random</em> already scores the baseline loss rate — the strategy wins
-      55.3% of its trades, so <span class="num">44.7%</span> of random blocks land on a loser.
-      A filter has to beat that to carry any information at all. Note the bar <em>moves with the
-      strategy's win rate</em>, which is why the harness computes it per run rather than
-      hard-coding it; a naive framing grades against a coin flip and declares victory at
-      55%.</p>
+      <span class="label">The pass mark isn't 50%</span>
+      <p>If you blocked trades at random, you'd land on a loser exactly as often as the rule loses — 44.7% of the time here. So a filter has to beat 44.7% to be doing anything at all. The pass mark moves with the strategy's win rate, which is why the tool calculates it fresh each run instead of hard-coding it.</p>
     </div>
   </section>
 
   <section id="method">
-    <h2>Method: two arms, one simulator</h2>
+    <h2>5. The method: run it twice</h2>
     <div class="col">
-      <p>Identical history, identical code path. The only difference between the arms is a single
-      injected callable.</p>
+      <p>Same four years, same replay code, run two times. Once with the news filter switched off. Once with it on — using the real prompt, the real thresholds, and only headlines published <em>before</em> each decision. Then compare the totals.</p>
     </div>
-
     <figure>
       <div class="svg-frame">
         <svg viewBox="0 0 960 330" role="img" aria-labelledby="ev-t ev-d">
-          <title id="ev-t">Two-arm counterfactual method</title>
-          <desc id="ev-d">The same history runs twice through the same simulator. Arm A has no
-          veto. Arm B consults point-in-time headlines scored by the live prompt through the live
-          thresholds. The metric delta between arms is the filter's cost.</desc>
-          <defs>
-            <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5"
-                    markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" opacity=".55"/>
-            </marker>
-          </defs>
+          <title id="ev-t">Run the replay twice</title>
+          <desc id="ev-d">The same four years of prices go through the same replay twice: once with no news filter, once with Claude blocking purchases. The difference in results is the cost of the filter.</desc>
+          <defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" opacity=".55"/></marker></defs>
           <g font-family="IBM Plex Sans, system-ui, sans-serif" fill="currentColor">
-
-            <rect x="20" y="128" width="176" height="62" rx="3" fill="var(--surface)"
-                  stroke="currentColor" stroke-opacity=".22"/>
-            <text x="38" y="152" font-size="13" font-weight="500">1,500 days</text>
-            <text x="38" y="170" font-size="11.5" opacity=".6"
-                  font-family="IBM Plex Mono, monospace">30 symbols · daily</text>
-
-            <!-- arm A -->
-            <rect x="300" y="34" width="290" height="76" rx="3" fill="var(--surface)"
-                  stroke="currentColor" stroke-opacity=".22"/>
-            <text x="320" y="58" font-size="13" font-weight="600">Arm A — baseline</text>
-            <text x="320" y="77" font-size="11.5" opacity=".65"
-                  font-family="IBM Plex Mono, monospace">backtest_trend(..., veto=None)</text>
-            <text x="320" y="95" font-size="11.5" opacity=".55">retry branch unreachable</text>
-
-            <!-- arm B -->
-            <rect x="300" y="208" width="290" height="76" rx="3" fill="var(--accent-bg)"
-                  class="dg-a-s" stroke-width="1.5"/>
-            <text x="320" y="232" font-size="13" font-weight="600" class="dg-a-f">Arm B — filtered</text>
-            <text x="320" y="251" font-size="11.5" class="dg-a-f" opacity=".85"
-                  font-family="IBM Plex Mono, monospace">backtest_trend(..., veto=_LazyVeto)</text>
-            <text x="320" y="269" font-size="11.5" class="dg-a-f" opacity=".7">live prompt · live thresholds</text>
-
-            <!-- claude -->
-            <rect x="646" y="208" width="294" height="76" rx="3" fill="var(--surface)"
-                  stroke="currentColor" stroke-opacity=".22"/>
+            <rect x="20" y="128" width="176" height="62" rx="3" fill="var(--surface)" stroke="currentColor" stroke-opacity=".22"/>
+            <text x="38" y="152" font-size="13" font-weight="500">4 years of prices</text>
+            <text x="38" y="170" font-size="11.5" opacity=".6" font-family="IBM Plex Mono, monospace">30 stocks · daily</text>
+            <rect x="300" y="34" width="290" height="76" rx="3" fill="var(--surface)" stroke="currentColor" stroke-opacity=".22"/>
+            <text x="320" y="58" font-size="13" font-weight="600">Run A — no filter</text>
+            <text x="320" y="77" font-size="11.5" opacity=".65">the rule alone</text>
+            <text x="320" y="95" font-size="11.5" opacity=".55">buys everything it wants to</text>
+            <rect x="300" y="208" width="290" height="76" rx="3" fill="var(--accent-bg)" class="dg-a-s" stroke-width="1.5"/>
+            <text x="320" y="232" font-size="13" font-weight="600" class="dg-a-f">Run B — with filter</text>
+            <text x="320" y="251" font-size="11.5" class="dg-a-f" opacity=".85">same rule, Claude can block</text>
+            <text x="320" y="269" font-size="11.5" class="dg-a-f" opacity=".7">real prompt · real thresholds</text>
+            <rect x="646" y="208" width="294" height="76" rx="3" fill="var(--surface)" stroke="currentColor" stroke-opacity=".22"/>
             <text x="666" y="232" font-size="13" font-weight="500">Claude</text>
-            <text x="666" y="251" font-size="11.5" opacity=".6"
-                  font-family="IBM Plex Mono, monospace">headlines in [close−48h, close)</text>
-            <text x="666" y="269" font-size="11.5" opacity=".6"
-                  font-family="IBM Plex Mono, monospace">cached by prompt+model</text>
-
-            <!-- delta -->
-            <rect x="646" y="34" width="294" height="76" rx="3" fill="var(--surface)"
-                  stroke="currentColor" stroke-opacity=".22"/>
-            <text x="666" y="58" font-size="13" font-weight="500">Metric delta = the cost</text>
-            <text x="666" y="77" font-size="11.5" opacity=".6">expectancy · PF · drawdown</text>
-            <text x="666" y="95" font-size="11.5" opacity=".6">+ per-block attribution</text>
-
+            <text x="666" y="251" font-size="11.5" opacity=".6">only headlines from before</text>
+            <text x="666" y="269" font-size="11.5" opacity=".6">each decision</text>
+            <rect x="646" y="34" width="294" height="76" rx="3" fill="var(--surface)" stroke="currentColor" stroke-opacity=".22"/>
+            <text x="666" y="58" font-size="13" font-weight="500">A minus B = the cost</text>
+            <text x="666" y="77" font-size="11.5" opacity=".6">profit per trade · worst dip</text>
+            <text x="666" y="95" font-size="11.5" opacity=".6">+ each block, priced</text>
             <g stroke="currentColor" stroke-opacity=".5" stroke-width="1.4" marker-end="url(#ah2)">
               <path d="M 200 148 L 250 148 L 250 72 L 296 72" fill="none"/>
               <path d="M 200 170 L 250 170 L 250 246 L 296 246" fill="none"/>
               <line x1="594" y1="246" x2="642" y2="246"/>
-              <path d="M 590 72 L 620 72 L 642 72" fill="none"/>
-              <path d="M 790 204 L 790 150 L 790 114" fill="none"/>
+              <path d="M 590 72 L 642 72" fill="none"/>
+              <path d="M 790 204 L 790 114" fill="none"/>
             </g>
-            <text x="800" y="160" font-size="11" opacity=".55"
-                  font-family="IBM Plex Mono, monospace">diff arms</text>
+            <text x="800" y="160" font-size="11" opacity=".55" font-family="IBM Plex Mono, monospace">compare</text>
           </g>
         </svg>
       </div>
-      <figcaption>With <code>veto=None</code> the retry branch in the simulator is unreachable
-      and arm A is bit-identical to an unfiltered run. That identity is what makes the A/B fair —
-      the filtered arm is not a reimplementation, it is the same function with one argument
-      supplied.</figcaption>
+      <figcaption>The only difference between the two runs is one switch. That's what makes the comparison fair — Run B isn't a different program, it's the same program with the filter plugged in.</figcaption>
     </figure>
 
+    <h3>One trap the tool avoids</h3>
     <div class="col">
-      <p>Two engineering details make this work at all. The veto rule is not reimplemented for
-      the harness — the eval is handed the <em>production</em> <code>should_block</code> and
-      <code>fetch_window</code> methods, so it cannot silently drift from what runs live. And
-      because the simulator is a tight synchronous loop while scoring is async and
-      network-bound, each symbol's simulation runs in a worker thread and hands scoring requests
-      back to the event loop.</p>
-      <p>That last part hides a deadlock the code documents and sidesteps: the simulations get
-      their <em>own</em> thread pool rather than sharing the default, because otherwise every
-      worker eventually becomes a simulation blocked on a headline fetch that cannot get a
-      thread.</p>
-    </div>
-  </section>
-
-  <section id="lookahead">
-    <h2>Keeping the future out</h2>
-    <div class="col">
-      <p>Daily bars are stamped with a session date, but the decision is taken at the close. The
-      harness maps each bar to the moment its close was observed — 21:00 UTC, chosen as the
-      conservative bound through daylight saving — and windows headlines to
-      <code>[close − 48h, close)</code>. Nothing published after the decision can reach the
-      model, and the veto callback is documented as being invoked at the decision bar's close for
-      exactly this reason.</p>
-    </div>
-  </section>
-
-  <section id="attribution">
-    <h2>Attribution — the part everyone gets wrong</h2>
-    <div class="col">
-      <p>Having collected the blocks, the obvious move is to add up what those trades would have
-      earned and call it the cost of the filter. <strong>That number is badly wrong</strong>, and
-      the reason traces directly back to <a href="design.html#state-read">the state-read design
-      of <code>desired_long()</code></a>.</p>
-      <p>Because the trend signal reports a state rather than an event, a blocked entry is
-      retried the next day while the leg stays valid. A veto therefore <em>delays</em> an entry
-      rather than cancelling it, and the filtered arm usually gets into the same move a few days
-      late, recapturing most of it. In the actual run, <strong>every single priced block was
-      re-entered later</strong>.</p>
-    </div>
-
-    <div class="verdict meh">
-      <span class="label">The only honest measure</span>
-      <p>The filter's cost is the <strong>expectancy and return delta between the two arms</strong>
-      — not the sum of the blocked trades' returns. The report labels each block
-      <code>re-entered later</code> or <code>leg abandoned</code> precisely so this cannot be
-      misread.</p>
-    </div>
-
-    <div class="col">
-      <p>The attribution pass also handles a counting trap. A block on Monday is followed by
-      retries on Tuesday, Wednesday and so on for as long as the leg lives. That is
-      <em>one</em> blocked opportunity, not four, so the harness marks window starts and reports
-      those — otherwise the headline "blocks" figure inflates with every day the trend persists.
-      In this run: 11 blocked entries across 15 veto-days.</p>
+      <p>The obvious way to price the filter is to add up what the blocked trades would have earned. That number is badly wrong, because of how the rule works: a blocked purchase isn't cancelled, it's <em>delayed</em>. The trend is still there tomorrow, the rule asks again, and it usually buys a few days later — catching most of the same move. In the real run, every single blocked trade was bought later.</p>
+      <p>So the only honest cost is the difference in the totals between the two runs. The report labels every block "re-entered later" or "leg abandoned" so nobody misreads it.</p>
     </div>
   </section>
 
   <section id="numbers">
-    <h2>What it returned</h2>
+    <h2>6. What it found</h2>
     <div class="col">
-      <p>1,500 days, 30 symbols, <code>claude-opus-4-8</code>, prompt <code>v1</code>, bearish
-      threshold 0.6, earnings blocking on, 48-hour lookback.</p>
+      <p>1,500 days, 30 stocks, Claude Opus 4.8, prompt version 1, blocking when "bearish" with at least 60% confidence or when earnings are due.</p>
     </div>
-
-    <div class="table-wrap">
-      <table>
-        <caption>Source: <code>eval-news.json</code>, committed to the repository.</caption>
-        <thead>
-          <tr><th>Metric</th><th class="n">Baseline</th><th class="n">Filtered</th><th class="n">Delta</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>Trades</td><td class="n">255</td><td class="n">255</td><td class="n">0</td></tr>
-          <tr><td>Win rate</td><td class="n">55.3%</td><td class="n">55.3%</td><td class="n">0.0pp</td></tr>
-          <tr class="hi"><td>Expectancy / trade</td><td class="n">+5.499%</td><td class="n">+5.530%</td><td class="n">+0.031pp</td></tr>
-          <tr><td>Profit factor</td><td class="n">2.705</td><td class="n">2.728</td><td class="n">+0.023</td></tr>
-          <tr><td>Total return</td><td class="n">+286.4%</td><td class="n">+289.5%</td><td class="n">+3.1pp</td></tr>
-          <tr><td>Max drawdown</td><td class="n">12.42%</td><td class="n">11.92%</td><td class="n pos">−0.50pp</td></tr>
-          <tr><td>Sharpe (ann)</td><td class="n">2.451</td><td class="n">2.466</td><td class="n">+0.015</td></tr>
-        </tbody>
-      </table>
-    </div>
+    <div class="table-wrap"><table>
+      <caption>Numbers from <code>eval-news.json</code> in the repository.</caption>
+      <thead><tr><th>What</th><th class="n">No filter</th><th class="n">With filter</th><th class="n">Change</th></tr></thead>
+      <tbody>
+        <tr><td>Trades</td><td class="n">255</td><td class="n">255</td><td class="n">0</td></tr>
+        <tr><td>Share that won</td><td class="n">55.3%</td><td class="n">55.3%</td><td class="n">0</td></tr>
+        <tr class="hi"><td>Average profit per trade</td><td class="n">+5.499%</td><td class="n">+5.530%</td><td class="n">+0.031 pts</td></tr>
+        <tr><td>Won per $1 lost</td><td class="n">$2.71</td><td class="n">$2.73</td><td class="n">+$0.02</td></tr>
+        <tr><td>Total return</td><td class="n">+286%</td><td class="n">+289%</td><td class="n">+3 pts</td></tr>
+        <tr><td>Worst dip</td><td class="n">12.4%</td><td class="n">11.9%</td><td class="n pos">−0.5 pts</td></tr>
+      </tbody>
+    </table></div>
 
     <dl class="kpis">
-      <div class="kpi">
-        <div class="k">Consulted</div><div class="v">271</div>
-        <div class="s">entry decisions the filter saw</div>
-      </div>
-      <div class="kpi">
-        <div class="k">Blocked</div><div class="v">11</div>
-        <div class="s">distinct entries, over 15 veto-days</div>
-      </div>
-      <div class="kpi">
-        <div class="k">Block precision</div><div class="v">63.6%</div>
-        <div class="s">7 of 11 dodged a loser · random ≈ 45%</div>
-      </div>
-      <div class="kpi">
-        <div class="k">Errors</div><div class="v neg">41%</div>
-        <div class="s">111 of 271 — all failed open</div>
-      </div>
+      <div class="kpi"><div class="k">Times asked</div><div class="v">271</div><div class="s">purchases the filter was consulted on</div></div>
+      <div class="kpi"><div class="k">Blocked</div><div class="v">11</div><div class="s">all 11 bought later anyway</div></div>
+      <div class="kpi"><div class="k">Of those, losers</div><div class="v">7</div><div class="s">63.6% · random would get 44.7%</div></div>
+      <div class="kpi"><div class="k">Errors</div><div class="v neg">111</div><div class="s">41% — every one ignored, by design</div></div>
     </dl>
 
     <div class="verdict meh">
-      <span class="label">Verdict — roughly neutral</span>
-      <p>A delta of <span class="num">+0.03</span> percentage points of expectancy on 11 blocks.
-      Precision beat its base rate — 63.6% against 44.7% — but at n=11 the probability of
-      scoring 7-or-better purely by chance is about <span class="num">0.17</span>. That is
-      suggestive and nowhere near significant.</p>
-      <p>The defensible reading is that the veto is approximately free, possibly slightly
-      positive, and nothing to build on yet. It was kept, because free is acceptable and the
-      plumbing has other uses. It was deliberately <em>not</em> expanded on the strength of
-      eleven data points.</p>
+      <span class="label">Verdict: roughly nothing, possibly slightly good</span>
+      <p>The filter changed the average trade by 0.03 percentage points. Its blocks did land on losers more often than chance (64% vs 45%) — but on 11 examples, there's about a 1-in-6 chance of doing that well by luck. Too few to trust. It was kept because it's harmless and cheap. It was deliberately <em>not</em> expanded on the strength of eleven data points.</p>
     </div>
 
-    <h3>The error rate deserves its own note</h3>
+    <h3>The number I didn't expect</h3>
     <div class="col">
-      <p>111 of 271 consultations errored — headline fetch failures and scoring failures — and
-      every one of them failed open. That is not a bug being confessed; it is the designed
-      behaviour working. But it reframes what the run measured: for much of it, the system was
-      trading its deterministic strategy completely unfiltered.</p>
-      <p>The design lesson generalises. For an LLM component in a system with real consequences,
-      the error path is not an edge case to handle later — here it was the <em>plurality</em>
-      path, and the decision about which way it fails is a more consequential design choice than
-      the prompt.</p>
+      <p>111 of 271 checks failed — the headline fetch or the AI call errored. Every failure was treated as "don't block", by design. That means for a large slice of this test, the rule was trading with no filter at all. It reframes what was measured, and it teaches something general: for an AI feature in a system that does real things, the decision about what happens <em>when it breaks</em> matters more than the prompt.</p>
     </div>
   </section>
 
-  <section id="contamination">
-    <h2>Stated contamination</h2>
+  <section id="flaw">
+    <h2>7. The known flaw</h2>
     <div class="col">
-      <p>The harness prints this caveat on every single run, and it belongs here too. The model
-      has training knowledge of what happened after these dates. That biases the filter toward
-      looking <em>good</em>.</p>
-      <p>So the results are asymmetric in what they can support:</p>
+      <p>Claude was trained on news from these years. It has, in some sense, read how they turned out. That makes the filter look <em>better</em> than it really is. So:</p>
       <ul>
-        <li>A <strong>poor</strong> result is a lower bound on how poor it really is.</li>
-        <li>A <strong>good</strong> result is <em>not</em> proof of an edge.</li>
+        <li>A <strong>bad</strong> result is a floor — reality is at least that bad.</li>
+        <li>A <strong>good</strong> result proves nothing.</li>
       </ul>
-      <p>Which means the honest conclusion from a near-zero result is not "the filter is neutral"
-      but "the filter is neutral <em>at best</em>, measured under conditions that favour it".</p>
+      <p>The tool prints this warning on every run. A near-zero result under conditions that flatter the filter should be read as "near zero at best".</p>
     </div>
-
-    <div class="note">
-      <span class="label">The cache is the regression test</span>
-      <p>Verdicts are cached on disk keyed by
-      <code>symbol|day|lookback|prompt_version|model</code>. Changing the prompt or the model
-      invalidates every verdict <em>by design</em> — that is the regression signal, not an
-      inconvenience. Re-running after changing only the report costs nothing, which is what makes
-      iterating on the harness affordable.</p>
+    <div class="plain">
+      <div class="k">A useful side effect</div>
+      <p>Every Claude verdict is cached on disk, keyed by the prompt version and model. Change the prompt, and every cached answer is thrown out and re-scored. That means the test doubles as a regression check: edit the prompt, re-run, and see whether the numbers moved.</p>
     </div>
-
     <div class="col">
-      <p>A longer treatment of the reasoning behind this harness — why blocks rather than
-      accuracy, what building it changed, and what it cannot tell you — is in the companion
-      essay: <a href="earning-the-veto.html">Earning the Veto</a>.</p>
+      <p>The longer, more technical write-up of this test is the essay <a href="earning-the-veto.html">Earning the Veto</a>.</p>
     </div>
   </section>
 
-  <div class="pager">
-    <a href="design.html">← Design</a>
-    <a href="results.html">Results →</a>
-  </div>
-
-  <footer>
-    <p>Project 10X · paper trading only · engineering write-up, not financial advice.</p>
-  </footer>
-
+  <div class="pager"><a href="design.html">← Build it</a><a href="results.html">Results →</a></div>
+  <footer><p>Project 10X · paper trading only · not financial advice.</p></footer>
 </div>
 </body>
 </html>

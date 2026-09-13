@@ -3,389 +3,492 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Design — Project 10X</title>
-<meta name="description" content="System design: components, data flow, the tick walked step by step, and three independent risk layers.">
+<title>Build it — Project 10X</title>
+<meta name="description" content="How to build this trading bot step by step, written as a system-design walkthrough: requirements, pieces, data flow, deep dives on the Claude SDK and the safety layer, and a build order.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap">
 <link rel="stylesheet" href="assets/site.css">
 </head>
 <body>
-
-<nav class="sitenav">
-  <div class="sitenav-inner">
-    <a class="brand" href="index.html">Project <span>10X</span></a>
-    <a class="nl" href="index.html">Overview</a>
-    <a class="nl" href="approach.html">Approach</a>
-    <a class="nl" href="design.html" aria-current="page">Design</a>
-    <a class="nl" href="evals.html">Evals</a>
-    <a class="nl" href="results.html">Results</a>
-  </div>
-</nav>
-
+<nav class="sitenav"><div class="sitenav-inner">
+  <a class="brand" href="index.html">Project <span>10X</span></a>
+  <a class="nl" href="index.html">Overview</a>
+  <a class="nl" href="approach.html">Approach</a>
+  <a class="nl" href="design.html" aria-current="page">Build it</a>
+  <a class="nl" href="evals.html">Testing</a>
+  <a class="nl" href="results.html">Results</a>
+  <a class="nl" href="glossary.html">Glossary</a>
+</div></nav>
 <div class="page">
 
   <header class="masthead">
-    <p class="eyebrow">02 — Design</p>
-    <h1>System design</h1>
-    <p class="standfirst">One long-running Python process, one Alpaca paper account, a Redis
-    instance for day state and a Mongo collection for the audit trail. The interesting part is
-    not the topology — it is where the boundaries fall.</p>
-
-    <dl class="facts">
-      <div class="fact"><dt>Lines of Python</dt><dd>3,136</dd></div>
-      <div class="fact"><dt>Modules</dt><dd>22</dd></div>
-      <div class="fact"><dt>Tests</dt><dd>67</dd></div>
-      <div class="fact"><dt>Watchlist</dt><dd>30</dd></div>
-      <div class="fact"><dt>Tick interval</dt><dd>60 min</dd></div>
-    </dl>
+    <p class="eyebrow">Build it</p>
+    <h1>How to build this, step by step</h1>
+    <p class="standfirst">Written the way a system-design interview is structured: what it must do, the pieces, how data moves, then the parts worth a closer look. The last section is a build order you could actually follow, with a way to check your work at each step.</p>
+    <div class="toc">
+      <div class="k">On this page</div>
+      <ol>
+        <li><a href="#req">What it has to do</a></li>
+        <li><a href="#entities">The things it keeps track of</a></li>
+        <li><a href="#api">How the pieces talk to each other</a></li>
+        <li><a href="#flow">One hourly check, start to finish</a></li>
+        <li><a href="#hld">The whole system on one diagram</a></li>
+        <li><a href="#dive-rule">Deep dive: the trading rule</a></li>
+        <li><a href="#sdk">Deep dive: the Claude SDK — what, how, why</a></li>
+        <li><a href="#dive-risk">Deep dive: the safety layer</a></li>
+        <li><a href="#dive-test">Deep dive: testing before trusting</a></li>
+        <li><a href="#run">Running it</a></li>
+        <li><a href="#order">Build order, with checks</a></li>
+      </ol>
+    </div>
   </header>
 
-  <section id="shape">
-    <h2>The shape of it</h2>
+  <!-- ================================================================ -->
+  <section id="req">
+    <h2>1. What it has to do</h2>
     <div class="col">
-      <p>Four files carry the system: <code>trend_trader.py</code> is the live engine,
-      <code>news.py</code> is the only LLM component, <code>backtest/trend.py</code> holds the
-      strategy shared by live and simulation, and <code>eval/news_replay.py</code> prices the
-      model. Everything else is plumbing or history.</p>
+      <p>Start by writing down what "done" looks like. Two lists: things it must do, and qualities it must have.</p>
     </div>
 
+    <h3>Must do</h3>
+    <div class="col">
+      <ol>
+        <li><strong>Trade on its own.</strong> Buy and sell from a fixed list of 30 US stocks without a person clicking anything, during market hours.</li>
+        <li><strong>Decide with a rule, not a guess.</strong> Which stocks to own is decided by a fixed formula over daily prices — the same formula that was tested on the past.</li>
+        <li><strong>Read the news before buying.</strong> Ask Claude to scan recent headlines and refuse a purchase if the news is bad or earnings are imminent.</li>
+        <li><strong>Keep a diary.</strong> Record every decision — including "did nothing" — so any day can be explained afterwards.</li>
+      </ol>
+    </div>
+
+    <h3>Must be</h3>
+    <div class="col">
+      <ul>
+        <li><strong>Safe.</strong> Hard limits on position size, number of positions, and daily loss, enforced in code no AI can change. Target: zero orders outside the limits, ever.</li>
+        <li><strong>Reliable.</strong> One check per hour, never two at once. If a piece breaks, that check skips gracefully; the next hour tries again.</li>
+        <li><strong>Cheap.</strong> AI calls only when the rule is about to buy — a few per week.</li>
+        <li><strong>Honest.</strong> Anything that decides trades must be replayable over history first. This is a requirement, not a nice-to-have.</li>
+      </ul>
+    </div>
+
+    <h3>Deliberately not doing</h3>
+    <div class="col">
+      <p>Real money. Short selling. Options. Crypto (built, then parked). Many users. Sub-second speed — decisions are hourly, so a slow network is fine.</p>
+    </div>
+
+    <div class="plain">
+      <div class="k">A real-world limit worth knowing</div>
+      <p>US accounts under $25,000 may only make three same-day buy-then-sell round trips per five days (the <a class="term" href="glossary.html#pdt">PDT rule</a>). Holding for days or weeks is unlimited. That alone rules out fast day-trading strategies for a small account, and points at the slow rule this system uses.</p>
+    </div>
+  </section>
+
+  <!-- ================================================================ -->
+  <section id="entities">
+    <h2>2. The things it keeps track of</h2>
+    <div class="col">
+      <p>Every system has a handful of nouns. These are the ones here.</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Thing</th><th>What it is</th><th>Where it lives</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Watchlist</strong></td><td>The 30 stocks allowed. Nothing else can be traded.</td><td class="mono">config/equity/watchlist.yaml</td></tr>
+          <tr><td><strong>Daily bar</strong></td><td>One day of prices for one stock: open, high, low, close, volume.</td><td>fetched from Alpaca each hour</td></tr>
+          <tr><td><strong>Signal</strong></td><td>For each stock, one yes/no: "should we own this right now?"</td><td>computed, not stored</td></tr>
+          <tr><td><strong>Position</strong></td><td>What we currently own, and at what price.</td><td>the broker is the source of truth</td></tr>
+          <tr><td><strong>News verdict</strong></td><td>Claude's answer for one stock: bullish / neutral / bearish, a confidence, and whether earnings are due.</td><td class="mono">Redis, 2-hour expiry</td></tr>
+          <tr><td><strong>Order</strong></td><td>A buy or sell sent to the broker.</td><td>Alpaca</td></tr>
+          <tr><td><strong>Day state</strong></td><td>Today's starting balance and whether the kill switch has fired.</td><td class="mono">Redis, keyed by date</td></tr>
+          <tr><td><strong>Tick record</strong></td><td>The diary entry for one hourly check: every signal, every action, every verdict.</td><td class="mono">MongoDB, forever</td></tr>
+          <tr><td><strong>Risk settings</strong></td><td>Max per stock, max positions, daily loss limit.</td><td class="mono">config/equity/risk.yaml</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================================================================ -->
+  <section id="api">
+    <h2>3. How the pieces talk to each other</h2>
+    <div class="col">
+      <p>There is no web API — it's one program. But the modules inside have clear boundaries, and naming them is what keeps the design honest. Each line below is one Python function or class, and the arrow is what it gives back.</p>
+    </div>
+    <div class="code wide">
+<pre><span class="c-dim"># prices and the account  (market_data.py)</span>
+MarketData.get_history(symbol, days)      → daily bars
+MarketData.get_account()                  → equity, cash, what we own
+MarketData.submit_notional_buy(sym, $)    → order id
+MarketData.close_position(sym)            → done
+
+<span class="c-dim"># the rule  (backtest/trend.py — shared by live and replay)</span>
+desired_long(bars)                        → True / False
+
+<span class="c-dim"># the AI  (news.py)</span>
+NewsSentiment.assess(symbol)              → verdict  (label, confidence, earnings?)
+NewsSentiment.should_block(verdict)       → True / False, and the reason
+
+<span class="c-dim"># safety  (risk/drawdown.py)</span>
+DrawdownMonitor.check(equity)             → paused? (and liquidates if so)
+
+<span class="c-dim"># the diary  (persistence/journal.py)</span>
+Journal.record_tick(everything)           → record id</pre>
+    </div>
+    <div class="col">
+      <p>The one line to notice is <code>desired_long</code>. It lives in the <em>backtest</em> folder, and the live program imports it from there. The thing that was tested and the thing that runs are literally the same function. Keep that property; it is the whole reason the test results mean anything.</p>
+    </div>
+  </section>
+
+  <!-- ================================================================ -->
+  <section id="flow">
+    <h2>4. One hourly check, start to finish</h2>
+    <div class="col">
+      <p>Once an hour during market hours, the scheduler calls <code>run_tick()</code>. Here is what happens, in order.</p>
+    </div>
+
+    <div class="step"><div class="step-n">1</div><div>
+      <h3>Read the account and check the kill switch</h3>
+      <p>Get today's balance. Compare it to the balance at the start of the day (stored in Redis). If we're down 10% or more, sell everything, set a "paused" flag for the rest of the day, and skip all buying below. Selling is still allowed while paused — you can always get out.</p>
+    </div></div>
+
+    <div class="step"><div class="step-n">2</div><div>
+      <h3>For each of the 30 stocks, fetch 400 days of daily bars</h3>
+      <p>400 because the rule needs 100 days of history for its moving average, plus room. If fetching one stock fails, skip that stock and carry on — one bad feed should never stop the other 29.</p>
+    </div></div>
+
+    <div class="step"><div class="step-n">3</div><div>
+      <h3>Drop today's unfinished bar</h3>
+      <p>While the market is open, the last "daily" bar is today's — and its "close" is really just the current price. The rule was tested on finished days only, so it must see finished days only. <em>This step was missing for three months; see <a href="results.html#live">Results</a>.</em></p>
+    </div></div>
+
+    <div class="step"><div class="step-n">4</div><div>
+      <h3>Ask the rule: should we own this?</h3>
+      <p><code>desired_long(bars)</code> answers yes or no. Then compare with whether we <em>do</em> own it:</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Own it?</th><th>Rule says</th><th>Do</th></tr></thead>
+        <tbody>
+          <tr><td>yes</td><td>—</td><td>if it's down 20% from what we paid: <strong>sell</strong> (emergency stop)</td></tr>
+          <tr><td>yes</td><td>no</td><td><strong>sell</strong> — the trend broke</td></tr>
+          <tr><td>yes</td><td>yes</td><td>nothing — keep holding</td></tr>
+          <tr><td>no</td><td>yes</td><td><strong>maybe buy</strong> — go to step 5</td></tr>
+          <tr><td>no</td><td>no</td><td>nothing</td></tr>
+        </tbody>
+      </table></div>
+      <p>Notice this compares two facts rather than reacting to an event. If the program crashes halfway through, the next hour simply recomputes both facts and does the right thing. Nothing to repair, nothing to remember.</p>
+    </div></div>
+
+    <div class="step"><div class="step-n">5</div><div>
+      <h3>Before buying: is there room, and what does the news say?</h3>
+      <p>If we already hold 10 stocks, stop — no room. Otherwise ask Claude about this one stock (details in <a href="#sdk">section 7</a>). If it says "bad news" with high confidence, or "earnings are due", record <code>BLOCKED</code> and move on. The rule will ask again tomorrow if the trend is still there.</p>
+    </div></div>
+
+    <div class="step"><div class="step-n">6</div><div>
+      <h3>Buy — but only with cash you have</h3>
+      <p>Target is 10% of the account, about $100. But you can only spend cash on hand, so take the smaller of the two, less a 2% cushion (a market order can fill slightly above the quoted price). Under $20? Skip it as too small to matter.</p>
+    </div></div>
+
+    <div class="step"><div class="step-n">7</div><div>
+      <h3>Write the diary entry</h3>
+      <p>One MongoDB record: the account, every stock's yes/no and price, every action taken, and for every Claude verdict — the headlines it saw, the model used, and the prompt version. That last part matters: it means an old decision can be re-judged later with a new prompt.</p>
+    </div></div>
+  </section>
+
+  <!-- ================================================================ -->
+  <section id="hld">
+    <h2>5. The whole system on one diagram</h2>
     <figure>
       <div class="svg-frame">
         <svg viewBox="0 0 960 564" role="img" aria-labelledby="arch-t arch-d">
           <title id="arch-t">Project 10X architecture</title>
-          <desc id="arch-d">Daily bars feed a deterministic Donchian signal, which reconciles
-          holdings. Entries pass through a Claude news veto and then hard risk caps before
-          reaching Alpaca. Redis holds day state; Mongo holds the audit trail.</desc>
-          <defs>
-            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5"
-                    markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" opacity=".55"/>
-            </marker>
-          </defs>
+          <desc id="arch-d">Daily prices feed a fixed rule, which reconciles holdings. Purchases pass through a Claude news check and then hard safety limits before reaching the broker. Redis holds today's state; MongoDB holds the diary.</desc>
+          <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" opacity=".55"/></marker></defs>
           <g font-family="IBM Plex Sans, system-ui, sans-serif" fill="currentColor">
-
-            <!-- main spine -->
-            <g>
-              <rect x="40" y="20" width="420" height="56" rx="3" fill="var(--surface)"
-                    stroke="currentColor" stroke-opacity=".22"/>
-              <text x="60" y="43" font-size="13.5" font-weight="500">Alpaca daily bars</text>
-              <text x="60" y="61" font-size="11.5" opacity=".6"
-                    font-family="IBM Plex Mono, monospace">1Day · 400d · adjustment=ALL</text>
-            </g>
-
-            <g>
-              <rect x="40" y="108" width="420" height="56" rx="3" fill="var(--accent-bg)"
-                    class="dg-a-s" stroke-width="1.5"/>
-              <text x="60" y="131" font-size="13.5" font-weight="600" class="dg-a-f">desired_long() — deterministic</text>
-              <text x="60" y="149" font-size="11.5" class="dg-a-f" opacity=".8"
-                    font-family="IBM Plex Mono, monospace">Donchian 50 high · SMA 100 regime · no LLM</text>
-            </g>
-
-            <g>
-              <rect x="40" y="196" width="420" height="56" rx="3" fill="var(--surface)"
-                    stroke="currentColor" stroke-opacity=".22"/>
-              <text x="60" y="219" font-size="13.5" font-weight="500">Reconcile holdings</text>
-              <text x="60" y="237" font-size="11.5" opacity=".6"
-                    font-family="IBM Plex Mono, monospace">enter · hold · exit · cat_stop</text>
-            </g>
-
-            <g>
-              <rect x="40" y="284" width="420" height="56" rx="3" fill="var(--surface)"
-                    stroke="currentColor" stroke-opacity=".22"/>
-              <text x="60" y="307" font-size="13.5" font-weight="500">News veto — Claude</text>
-              <text x="60" y="325" font-size="11.5" opacity=".6"
-                    font-family="IBM Plex Mono, monospace">entries only · block never initiate · fail-open</text>
-            </g>
-
-            <g>
-              <rect x="40" y="372" width="420" height="56" rx="3" fill="var(--surface)"
-                    stroke="currentColor" stroke-opacity=".22"/>
-              <text x="60" y="395" font-size="13.5" font-weight="500">Hard risk caps</text>
-              <text x="60" y="413" font-size="11.5" opacity=".6"
-                    font-family="IBM Plex Mono, monospace">10% size · 10 positions · whitelist · drawdown pause</text>
-            </g>
-
-            <g>
-              <rect x="40" y="460" width="420" height="56" rx="3" fill="var(--surface)"
-                    stroke="currentColor" stroke-opacity=".22"/>
-              <text x="60" y="483" font-size="13.5" font-weight="500">Alpaca paper orders</text>
-              <text x="60" y="501" font-size="11.5" opacity=".6"
-                    font-family="IBM Plex Mono, monospace">notional · long-only · fractional</text>
-            </g>
-
-            <!-- spine arrows -->
+            <g><rect x="40" y="20" width="420" height="56" rx="3" fill="var(--surface)" stroke="currentColor" stroke-opacity=".22"/>
+              <text x="60" y="43" font-size="13.5" font-weight="500">Daily prices from the broker</text>
+              <text x="60" y="61" font-size="11.5" opacity=".6" font-family="IBM Plex Mono, monospace">400 days · 30 stocks · adjusted for splits</text></g>
+            <g><rect x="40" y="108" width="420" height="56" rx="3" fill="var(--accent-bg)" class="dg-a-s" stroke-width="1.5"/>
+              <text x="60" y="131" font-size="13.5" font-weight="600" class="dg-a-f">The rule — plain code, no AI</text>
+              <text x="60" y="149" font-size="11.5" class="dg-a-f" opacity=".8" font-family="IBM Plex Mono, monospace">above 50-day high? above 100-day average?</text></g>
+            <g><rect x="40" y="196" width="420" height="56" rx="3" fill="var(--surface)" stroke="currentColor" stroke-opacity=".22"/>
+              <text x="60" y="219" font-size="13.5" font-weight="500">Compare with what we own</text>
+              <text x="60" y="237" font-size="11.5" opacity=".6" font-family="IBM Plex Mono, monospace">buy · hold · sell · emergency stop</text></g>
+            <g><rect x="40" y="284" width="420" height="56" rx="3" fill="var(--surface)" stroke="currentColor" stroke-opacity=".22"/>
+              <text x="60" y="307" font-size="13.5" font-weight="500">News check — Claude</text>
+              <text x="60" y="325" font-size="11.5" opacity=".6" font-family="IBM Plex Mono, monospace">only before a buy · can only say no · errors ignored</text></g>
+            <g><rect x="40" y="372" width="420" height="56" rx="3" fill="var(--surface)" stroke="currentColor" stroke-opacity=".22"/>
+              <text x="60" y="395" font-size="13.5" font-weight="500">Safety limits</text>
+              <text x="60" y="413" font-size="11.5" opacity=".6" font-family="IBM Plex Mono, monospace">10% per stock · 10 stocks max · 10% daily loss = stop</text></g>
+            <g><rect x="40" y="460" width="420" height="56" rx="3" fill="var(--surface)" stroke="currentColor" stroke-opacity=".22"/>
+              <text x="60" y="483" font-size="13.5" font-weight="500">Orders to the broker (Alpaca, fake money)</text>
+              <text x="60" y="501" font-size="11.5" opacity=".6" font-family="IBM Plex Mono, monospace">dollar amounts · buy only</text></g>
             <g stroke="currentColor" stroke-opacity=".5" stroke-width="1.4" marker-end="url(#ah)">
-              <line x1="250" y1="76"  x2="250" y2="104"/>
-              <line x1="250" y1="164" x2="250" y2="192"/>
-              <line x1="250" y1="252" x2="250" y2="280"/>
-              <line x1="250" y1="340" x2="250" y2="368"/>
-              <line x1="250" y1="428" x2="250" y2="456"/>
-            </g>
-
-            <!-- right column -->
-            <g>
-              <rect x="580" y="284" width="340" height="56" rx="3" fill="var(--surface)"
-                    stroke="currentColor" stroke-opacity=".22"/>
-              <text x="600" y="307" font-size="13.5" font-weight="500">Alpaca / Benzinga news</text>
-              <text x="600" y="325" font-size="11.5" opacity=".6"
-                    font-family="IBM Plex Mono, monospace">48h window · 15 headlines</text>
-            </g>
-            <g>
-              <rect x="580" y="372" width="340" height="56" rx="3" fill="var(--surface)"
-                    stroke="currentColor" stroke-opacity=".22"/>
-              <text x="600" y="395" font-size="13.5" font-weight="500">Redis — day state</text>
-              <text x="600" y="413" font-size="11.5" opacity=".6"
-                    font-family="IBM Plex Mono, monospace">anchor · paused · sentiment TTL</text>
-            </g>
-            <g>
-              <rect x="580" y="460" width="340" height="56" rx="3" fill="var(--surface)"
-                    stroke="currentColor" stroke-opacity=".22"/>
-              <text x="600" y="483" font-size="13.5" font-weight="500">Mongo — audit trail</text>
-              <text x="600" y="501" font-size="11.5" opacity=".6"
-                    font-family="IBM Plex Mono, monospace">one document per tick</text>
-            </g>
-
-            <!-- cross arrows -->
+              <line x1="250" y1="76" x2="250" y2="104"/><line x1="250" y1="164" x2="250" y2="192"/><line x1="250" y1="252" x2="250" y2="280"/><line x1="250" y1="340" x2="250" y2="368"/><line x1="250" y1="428" x2="250" y2="456"/></g>
+            <g><rect x="580" y="284" width="340" height="56" rx="3" fill="var(--surface)" stroke="currentColor" stroke-opacity=".22"/>
+              <text x="600" y="307" font-size="13.5" font-weight="500">News headlines</text>
+              <text x="600" y="325" font-size="11.5" opacity=".6" font-family="IBM Plex Mono, monospace">last 48 hours · up to 15</text></g>
+            <g><rect x="580" y="372" width="340" height="56" rx="3" fill="var(--surface)" stroke="currentColor" stroke-opacity=".22"/>
+              <text x="600" y="395" font-size="13.5" font-weight="500">Redis — today's state</text>
+              <text x="600" y="413" font-size="11.5" opacity=".6" font-family="IBM Plex Mono, monospace">start balance · paused? · cached verdicts</text></g>
+            <g><rect x="580" y="460" width="340" height="56" rx="3" fill="var(--surface)" stroke="currentColor" stroke-opacity=".22"/>
+              <text x="600" y="483" font-size="13.5" font-weight="500">MongoDB — the diary</text>
+              <text x="600" y="501" font-size="11.5" opacity=".6" font-family="IBM Plex Mono, monospace">one record per hourly check</text></g>
             <g stroke="currentColor" stroke-opacity=".5" stroke-width="1.4" marker-end="url(#ah)">
-              <line x1="576" y1="312" x2="464" y2="312"/>
-              <line x1="576" y1="400" x2="464" y2="400"/>
-              <line x1="464" y1="488" x2="576" y2="488"/>
-            </g>
-
-            <!-- scheduler bracket -->
-            <g stroke="currentColor" stroke-opacity=".28" stroke-width="1.2" fill="none">
-              <path d="M 30 48 L 16 48 L 16 224 L 30 224"/>
-            </g>
-            <text x="8" y="140" font-size="11" opacity=".55" transform="rotate(-90 8 140)"
-                  text-anchor="middle" font-family="IBM Plex Mono, monospace">hourly tick</text>
+              <line x1="576" y1="312" x2="464" y2="312"/><line x1="576" y1="400" x2="464" y2="400"/><line x1="464" y1="488" x2="576" y2="488"/></g>
+            <g stroke="currentColor" stroke-opacity=".28" stroke-width="1.2" fill="none"><path d="M 30 48 L 16 48 L 16 224 L 30 224"/></g>
+            <text x="8" y="140" font-size="11" opacity=".55" transform="rotate(-90 8 140)" text-anchor="middle" font-family="IBM Plex Mono, monospace">every hour</text>
           </g>
         </svg>
       </div>
-      <figcaption>The spine is deterministic top to bottom; the only model call sits on the
-      entry branch, and it can only stop the flow. Redis carries state that must survive a
-      restart within a trading day; Mongo carries everything, forever.</figcaption>
+      <figcaption>Read it top to bottom. Everything on the left column is fixed code except the one Claude box — and that box can only stop the flow, never start it.</figcaption>
     </figure>
   </section>
 
-  <section id="tick">
-    <h2>One tick, step by step</h2>
+  <!-- ================================================================ -->
+  <section id="dive-rule">
+    <h2>6. Deep dive: the trading rule</h2>
     <div class="col">
-      <p>The live engine is a single function, <code>TrendTrader.run_tick()</code>, and it reads
-      top to bottom. It fires hourly during market hours.</p>
+      <p>The rule is a classic called a <a class="term" href="glossary.html#donchian">Donchian breakout</a>, used by trend followers since the 1980s. In words:</p>
+      <ul>
+        <li><strong>Buy</strong> when today's close is higher than any close in the last 50 days, <em>and</em> the price is above its 100-day average.</li>
+        <li><strong>Sell</strong> when today's close is lower than any low in the last 20 days.</li>
+        <li><strong>Never take profit early.</strong> Let winners run. The only other exit is an emergency stop at 20% below the purchase price, which almost never fires because the 20-day rule usually gets there first.</li>
+      </ul>
+      <p>Why this rule? Because it's the one the replay said made money. And why daily prices instead of minute-by-minute? Because trading rarely means paying slippage rarely, and because the PDT rule forbids fast trading on a small account anyway.</p>
     </div>
 
-    <h4>Step 1 — account and drawdown, before anything else</h4>
+    <h3>The clever bit: it reads a state, not an event</h3>
     <div class="col">
-      <p>Equity is fetched, then the drawdown monitor reads today's <em>anchor</em> from Redis,
-      keyed by UTC date. If no anchor exists, this equity becomes it. If equity has fallen past
-      the limit and the switch has not already tripped, it liquidates and latches a pause flag
-      for the rest of the day.</p>
-      <p>The latch is the important detail: liquidation fires <strong>once</strong>, not on every
-      subsequent tick. And the liquidation function is injected as a closure scoped to this
-      agent's own symbols, so one agent's kill-switch can never touch another's book.</p>
+      <p>A naive version asks "did a breakout happen today?" This one asks "was the most recent breakout more recent than the most recent breakdown?" — in other words, "are we currently in an uptrend?"</p>
     </div>
-
-    <h4>Step 2 — reconcile, don't re-decide</h4>
+    <div class="code"><pre>entries = close &gt; highest_high_of_last_50_days
+exits   = close &lt; lowest_low_of_last_20_days
+in_trend = (date of last entry) &gt; (date of last exit)</pre></div>
     <div class="col">
-      <p>For each of 30 symbols the engine computes two booleans — <code>want_long</code> from
-      the trend signal, and <code>holding</code> from the broker — and reconciles them. That is
-      the entire decision surface.</p>
-    </div>
-
-    <div class="table-wrap">
-      <table>
-        <caption>The whole strategy, as a truth table. Note that a paused drawdown forces
-        <code>want_long</code> false for every symbol — so entries stop, but exits never do.</caption>
-        <thead>
-          <tr><th>Holding</th><th>Want long</th><th>Action</th><th>Reason code</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>yes</td><td>—</td><td>SELL if price ≤ entry × 0.80</td><td class="mono">cat_stop</td></tr>
-          <tr><td>yes</td><td>no</td><td>SELL</td><td class="mono">trend_break</td></tr>
-          <tr><td>yes</td><td>yes</td><td>hold — no order</td><td class="mono">—</td></tr>
-          <tr><td>no</td><td>yes</td><td>BUY, subject to slots + veto + cash</td><td class="mono">BUY / BLOCKED / SKIP</td></tr>
-          <tr><td>no</td><td>no</td><td>nothing</td><td class="mono">—</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="note">
-      <span class="label">Why reconciliation, not events</span>
-      <p>Because this compares states rather than reacting to transitions, the engine is
-      idempotent. A tick that crashes halfway leaves nothing to repair — the next tick
-      recomputes from scratch and converges. There is no pending-order state machine to
-      corrupt, and no position memory to persist.</p>
-    </div>
-
-    <div class="note">
-      <span class="label">The bar the signal is allowed to see</span>
-      <p>The channel read must use <strong>completed sessions only</strong>. Alpaca's last
-      <code>1Day</code> bar is today's partial bar while the market is open, so
-      <code>close.iloc[-1]</code> is the live intraday price — and feeding that to
-      <code>desired_long()</code> turns a daily-close strategy into an intraday one that
-      whipsaws. This shipped, ran for three months, and cost most of the live return before it
-      was caught; <code>completed_bars()</code> now drops the in-progress bar.</p>
-      <p>The catastrophic stop is the deliberate exception: the backtester checks it
-      <em>intrabar</em> against the bar's low, so reacting to the live price is the matching
-      behaviour there. Only the channel signal needs a closed bar.</p>
-    </div>
-
-    <h4>Step 3 — sizing, and the cash trap</h4>
-    <div class="col">
-      <p>Target size is 10% of <em>equity</em>, but only <em>cash</em> can be spent. The engine
-      takes the minimum of the two and keeps a 2% buffer, because a market notional order can
-      fill slightly above the quote and without the buffer the last position of the day bounces
-      on insufficient buying power. Anything under $20 is skipped as dust.</p>
-    </div>
-
-    <h4>Step 4 — journal everything</h4>
-    <div class="col">
-      <p>One Mongo document per tick, carrying every action taken and the
-      <code>want_long</code> / <code>holding</code> / <code>price</code> triple for all 30
-      symbols. This is what lets you reconstruct why <em>nothing</em> happened on a quiet day,
-      which is most days — a trend system trades rarely by design.</p>
-      <p>Crucially, each news verdict is journaled alongside the headlines that produced it, the
-      model name, and the prompt version. Without the input, a stored verdict cannot be
-      re-scored against a future prompt, and the production log is useless as an eval corpus.</p>
+      <p>Two nice things fall out. The program needs no memory — restart it anywhere and it recomputes the same answer. And when Claude blocks a purchase, nothing is lost: the trend is still there tomorrow, so the rule just asks again. The purchase is delayed, not cancelled. That property turns out to matter a lot when you try to measure what the news filter costs.</p>
     </div>
   </section>
 
-  <section id="state-read">
-    <h2>The trick that makes it all work</h2>
+  <!-- ================================================================ -->
+  <section id="sdk">
+    <h2>7. Deep dive: the Claude SDK — what, how, why</h2>
+
+    <h3>What it is</h3>
     <div class="col">
-      <p><code>desired_long()</code> does not ask "did a breakout happen today". It asks whether
-      the most recent breakout is more recent than the most recent breakdown — a read of current
-      trend <em>state</em>.</p>
+      <p>There are two ways to use Claude from code. The plain <strong>API</strong> is a single request: send text, get text back. If you want Claude to <em>do</em> things — call tools, look at results, decide what to do next — you have to write that loop yourself.</p>
+      <p>The <strong>Claude Agent SDK</strong> is that loop, already written. It's the same machinery that powers the Claude Code tool, shipped as a Python library. You give it a prompt and some options; it runs the think → call a tool → read the result → think again cycle for you, and it lets you plug in tools and safety checks. Under the hood the Python library starts the Claude Code program as a helper process and talks to it.</p>
     </div>
 
-    <div class="code">
-<pre>entries = close &gt; prior_high
-exits   = close &lt; prior_low
-last_entry = entries[entries].index.max()
-last_exit  = exits[exits].index.max()
-in_trend = last_exit is None or last_entry &gt; last_exit</pre>
+    <div class="plain">
+      <div class="k">The four ways to build an agent, and which this used</div>
+      <p><strong>1.</strong> Plain API, write the loop yourself. <strong>2.</strong> Plain API with its "tool runner" helper, which loops over tools you define. <strong>3.</strong> Managed Agents, where Anthropic hosts everything. <strong>4.</strong> The Agent SDK: the full Claude Code loop with built-in tools, MCP, and hooks, running on your own machine. This project used <strong>4</strong> — for reasons below.</p>
     </div>
 
+    <h3>How it's used here — two different ways</h3>
     <div class="col">
-      <p>Two consequences fall out, and both are load-bearing.</p>
-      <p><strong>The live engine needs no memory.</strong> Restart it, redeploy it, run it in a
-      fresh container — it recomputes the same answer from history. Nothing to persist, no
-      missed-event risk.</p>
-      <p><strong>A veto degrades gracefully.</strong> Because the answer is a state rather than
-      an event, a block today simply means the engine asks again tomorrow while the trend leg is
-      still alive. A veto <em>delays</em> an entry rather than cancelling it — which is precisely
-      why the eval's cost accounting can be honest. <a href="evals.html#attribution">That
-      matters enormously later</a>.</p>
+      <p><strong>Use 1: the news check (live today).</strong> A single question, single answer. The code sends Claude a short instruction and the headlines, and asks for a one-line JSON answer.</p>
     </div>
-  </section>
+    <div class="code"><pre><span class="c-dim"># news.py — one-shot, no tools, one turn</span>
+from claude_agent_sdk import ClaudeAgentOptions, query
 
-  <section id="risk">
-    <h2>Risk, in three independent layers</h2>
+opts = ClaudeAgentOptions(system_prompt=_SYSTEM, max_turns=1, model=model)
+async for msg in query(prompt=headlines_text, options=opts):
+    ...collect the text...
+<span class="c-dim"># then parse the JSON: {"label": "bearish", "confidence": 0.6, "earnings_imminent": false, ...}</span></pre></div>
+    <div class="col">
+      <p>The instruction is deliberately tiny: <em>"You are a terse financial news analyst. Judge the near-term risk for a LONG position. Respond with ONLY a JSON object."</em> <code>max_turns=1</code> means no tools, no back-and-forth — one answer and done.</p>
+      <p><strong>Use 2: the original "AI decides" agent (built, now switched off).</strong> This is where the SDK earned its keep. Claude was given real trading tools and a safety hook.</p>
+    </div>
+    <div class="code"><pre><span class="c-dim"># mcp_client.py — the full agent setup</span>
+ClaudeAgentOptions(
+    model=cfg.settings.trader_model,
+    system_prompt=system_prompt,                 <span class="c-dim"># the strategy rules, in words</span>
+    mcp_servers={"alpaca": {"type": "http", "url": "http://alpaca-mcp:8000/mcp"}},
+    allowed_tools=[                              <span class="c-dim"># 4 read-only + 5 order tools</span>
+        "mcp__alpaca__get_account_info", "mcp__alpaca__get_stock_bars", ...
+        "mcp__alpaca__place_stock_order", "mcp__alpaca__close_position", ...
+    ],
+    hooks={"PreToolUse": [
+        HookMatcher(matcher="mcp__alpaca__place_.*", hooks=[risk_hook]),
+        HookMatcher(matcher="mcp__alpaca__close_.*", hooks=[risk_hook]),
+    ]},
+)</pre></div>
+    <div class="col">
+      <p>Three things are happening in that block:</p>
+      <ul>
+        <li><strong><code>mcp_servers</code></strong> — plugs in Alpaca's official <a class="term" href="glossary.html#mcp">MCP</a> server. That gives Claude "get my account", "get prices", "place order", "close position" as ready-made tools. Nobody wrote a single tool wrapper. Tools are named <code>mcp__&lt;server&gt;__&lt;tool&gt;</code>.</li>
+        <li><strong><code>allowed_tools</code></strong> — the tools Claude may use without being asked. One honest correction to the code's own comment: per the SDK docs this list <em>auto-approves</em> tools, it doesn't hard-restrict Claude to them. The hard restriction is the next line.</li>
+        <li><strong><code>hooks</code> → <code>PreToolUse</code></strong> — the safety checkpoint. Any tool whose name matches <code>place_.*</code> or <code>close_.*</code> runs through <code>risk_hook</code> <em>before</em> it executes. The hook can refuse it.</li>
+      </ul>
+    </div>
 
-    <h3>Layer 1 — config caps, checked inline</h3>
-    <div class="table-wrap">
-      <table>
-        <caption>From <code>config/equity/risk.yaml</code>, sized for a ~$1,000 account.</caption>
-        <thead><tr><th>Setting</th><th class="n">Value</th><th>Effect</th></tr></thead>
-        <tbody>
-          <tr><td class="mono">max_position_pct</td><td class="n">0.10</td><td>~$100 per position</td></tr>
-          <tr><td class="mono">max_open_positions</td><td class="n">10</td><td>full deployment across 30 names</td></tr>
-          <tr><td class="mono">daily_drawdown_pct</td><td class="n">0.10</td><td>liquidate + pause for the day</td></tr>
-          <tr><td class="mono">long_only</td><td class="n">true</td><td>no short path exists in the engine</td></tr>
-          <tr><td class="mono">require_stop_loss</td><td class="n">false</td><td>see the caveat below</td></tr>
-        </tbody>
-      </table>
+    <h3>The hook — how you stop an AI doing something</h3>
+    <div class="col">
+      <p>The hook is an ordinary Python function. It receives the tool name and its arguments, runs the checks, and returns one of two things:</p>
+    </div>
+    <div class="code"><pre><span class="c-dim"># risk/hook.py — what the SDK expects back</span>
+<span class="c-dim"># to block:</span>
+return {"hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "deny",
+    "permissionDecisionReason": "notional $240 exceeds cap $100 (10% of $1,000 equity)",
+}}
+<span class="c-dim"># to allow:</span>
+return {}</pre></div>
+    <div class="col">
+      <p>When it returns "deny", the order never reaches Alpaca. Claude sees the reason as the tool's result and can try something else — but it cannot argue its way past. The SDK docs are explicit: if any hook says deny, the operation is blocked. The checks inside the hook, in order: is the day paused? · is it a short sale (not allowed)? · is the stock on the list? · does the order have a stop-loss? · is the stop too far away? · would this exceed 10 positions? · does it exceed 10% of the account? Each is one <code>if</code> statement, and there are 14 unit tests covering them.</p>
+    </div>
+
+    <h3>Why the Agent SDK, and not the plain API?</h3>
+    <div class="col">
+      <p>Three real reasons, in order of importance:</p>
+      <ol>
+        <li><strong>The hook.</strong> A safety check that runs <em>inside</em> the agent loop, before each tool call, is exactly what a trading bot needs. The SDK provides that as a first-class feature. (The plain API's tool-runner helper also has per-turn hooks, so this alone wasn't decisive — but with the SDK it came together with the next two.)</li>
+        <li><strong>MCP for free.</strong> Alpaca ships an MCP server. Pointing the SDK at it gave Claude nine working trading tools in one config line. With the plain API you'd write and maintain each tool's schema and handler yourself.</li>
+        <li><strong>Login.</strong> The SDK can use a Claude subscription login instead of a metered API key, which is how this personal project ran.</li>
+      </ol>
     </div>
 
     <div class="note">
-      <span class="label">An honest caveat</span>
-      <p><code>require_stop_loss: false</code> is not laziness. Fractional equity orders cannot
-      carry Alpaca bracket orders, and on a $1,000 account every position is fractional.
-      There is therefore <strong>no resting stop at the broker</strong> — exits are managed by
-      the engine on ticks, which means overnight and weekend gap risk is real and unhedged.</p>
+      <span class="label">An honest note on that third reason</span>
+      <p>Anthropic's SDK docs say that, unless approved, third-party developers should not offer Claude.ai login to their <em>products</em> and should use API keys instead. This project is one person's private tool on their own subscription, which is a different situation — but if you build something like this for other people, use an API key. Also: <strong>this matters less than it sounds.</strong> The live system makes a few Claude calls a week. At API prices that's cents.</p>
     </div>
 
-    <h3>Layer 2 — the drawdown kill-switch</h3>
+    <h3>The trade-offs, honestly</h3>
     <div class="col">
-      <p>Date-keyed in Redis, latching, scoped to one agent's symbols, and asymmetric: it blocks
-      entries while permitting exits. Its known failure mode is documented rather than hidden —
-      change the account balance mid-session and the anchor is stale, so the next tick reads a
-      false drawdown and liquidates. Recovery is manual: clear the anchor and pause keys, then
-      restart.</p>
-    </div>
-
-    <h3>Layer 3 — the <code>PreToolUse</code> gate</h3>
-    <div class="col">
-      <p>This layer is dormant with the LLM path, but it is the most reusable idea in the
-      repository, because it answers a question every agentic system eventually faces:
-      <strong>how do you stop a model taking an action you did not sanction?</strong></p>
-      <p>The answer is not prompt instructions. It is a hook registered against the tool name
-      that intercepts the call before it reaches the server and can deny it outright.</p>
-    </div>
-
-    <div class="code">
-<pre>hooks={"PreToolUse": [
-    HookMatcher(matcher="mcp__alpaca__place_.*", hooks=[risk_hook]),
-    HookMatcher(matcher="mcp__alpaca__close_.*", hooks=[risk_hook]),
-]}</pre>
-    </div>
-
-    <div class="col">
-      <p>The decision logic behind it, <code>evaluate_order()</code>, is a <em>pure function</em>
-      — no SDK types, no I/O — so it is directly unit-testable, and 14 tests cover it. Its checks
-      run in order: risk-reducing operations always pass; then paused, long-only violation,
-      missing symbol, whitelist, stop-loss present, stop distance, position count, notional
-      resolvable, notional cap. Every decision is recorded with its reason, so a denial is
-      visible after the fact.</p>
-    </div>
-
-    <div class="note">
-      <span class="label">Scar tissue worth reading</span>
-      <p>The first version of the stop-loss extractor only understood a nested
-      <code>stop_loss</code> shape, but the real Alpaca MCP tool uses flat keys like
-      <code>stop_loss_stop_price</code>. The hook therefore denied <em>every</em> bracket order
-      and would have blocked every trade forever. It was caught by the first real order and now
-      has a regression test. The general lesson: a fail-closed gate that misreads its input
-      fails silently and totally.</p>
+      <ul>
+        <li><strong>It's heavy for the news check.</strong> Starting a helper process to ask one question is more machinery than the job needs. A plain API call with a structured-output schema would be lighter, faster, and easier to run many in parallel. The SDK was used here for consistency (one login, one library), not because the news check needs an agent.</li>
+        <li><strong>Errors happen.</strong> In the four-year test, 41% of news checks failed (fetch or scoring errors). That's why the design fails open — a broken check never stops a good trade — and why the error count is printed in every report rather than hidden.</li>
+        <li><strong>The big agent is switched off.</strong> Once the replay showed the "AI decides" strategy losing money, the whole tools-and-hooks setup became dormant. It's kept in the repo because the hook pattern is the most reusable idea in it.</li>
+      </ul>
     </div>
   </section>
 
-  <section id="ops">
-    <h2>Deployment</h2>
+  <!-- ================================================================ -->
+  <section id="dive-risk">
+    <h2>8. Deep dive: the safety layer</h2>
     <div class="col">
-      <p>Five Docker services, three of them profile-gated and off by default. The live agent,
-      Redis and Mongo come up on a plain <code>docker compose up -d</code>. The crypto agent, the
-      MCP server and the Mongo web UI each require an explicit profile flag.</p>
-      <p>The <code>config/</code> directory is volume-mounted, so parameter tuning is a restart
-      rather than a rebuild. Claude authenticates with a subscription OAuth token rather than an
-      API key, and Compose deliberately blanks <code>ANTHROPIC_API_KEY</code> so a stray key
-      cannot silently override it.</p>
+      <p>Three separate layers. None depends on another, and none can be changed by anything Claude says.</p>
     </div>
 
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Service</th><th>State</th><th>Note</th></tr></thead>
-        <tbody>
-          <tr><td class="mono">agent-equity</td><td><span class="pill live">on</span></td><td>the live agent</td></tr>
-          <tr><td class="mono">redis · mongo</td><td><span class="pill live">on</span></td><td>day state + audit trail</td></tr>
-          <tr><td class="mono">agent-crypto</td><td><span class="pill">profile</span></td><td>paused — paper does not fill crypto</td></tr>
-          <tr><td class="mono">alpaca-mcp</td><td><span class="pill">profile</span></td><td>only the dormant LLM mode needs it</td></tr>
-          <tr><td class="mono">mongo-express</td><td><span class="pill">profile</span></td><td>loopback-bound; tunnel it</td></tr>
-        </tbody>
-      </table>
+    <h3>Layer 1 — the settings file</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Setting</th><th class="n">Value</th><th>In words</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">max_position_pct</td><td class="n">0.10</td><td>at most 10% of the account in one stock</td></tr>
+        <tr><td class="mono">max_open_positions</td><td class="n">10</td><td>at most 10 stocks at once</td></tr>
+        <tr><td class="mono">daily_drawdown_pct</td><td class="n">0.10</td><td>lose 10% in a day → sell everything, stop for the day</td></tr>
+        <tr><td class="mono">long_only</td><td class="n">true</td><td>never bet on prices falling</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Layer 2 — the kill switch</h3>
+    <div class="col">
+      <p>At every hourly check, compare the balance now to the balance at the start of the day. Down 10%? Sell everything and set a flag in Redis that stops all buying until tomorrow. The flag is keyed to today's date and expires on its own. It fires once, not every hour after.</p>
+      <p>Known wrinkle: if you change the account balance mid-day (say, top it up), the "start of day" number is stale and the switch can fire falsely. The fix is manual — clear the Redis key and restart.</p>
+    </div>
+
+    <h3>Layer 3 — the hook (for the AI agent)</h3>
+    <div class="col">
+      <p>Described in section 7. Dormant now, but it's the answer to a question every AI-agent project eventually hits: how do you stop the model doing something you didn't sanction? Not by telling it. By intercepting it.</p>
+    </div>
+
+    <div class="plain">
+      <div class="k">A bug worth learning from</div>
+      <p>The first version of the hook only recognised stop-loss prices written one way. The real Alpaca tool wrote them another way. Result: the hook refused <em>every</em> order, and would have done so forever. It was caught on the very first real order. Lesson: a safety check that misreads its input fails silently and completely — test it against the real thing, not your idea of the real thing.</p>
     </div>
   </section>
 
-  <div class="pager">
-    <a href="approach.html">← Approach</a>
-    <a href="evals.html">Evals →</a>
-  </div>
+  <!-- ================================================================ -->
+  <section id="dive-test">
+    <h2>9. Deep dive: testing before trusting</h2>
+    <div class="col">
+      <p>Two tools, for two different questions. The <a href="evals.html">Testing page</a> explains both properly; here is the shape.</p>
+      <p><strong>The replay tool (backtester)</strong> answers "would this rule have made money?" It walks through years of daily prices, applying the rule one day at a time, only ever using information available that day, and charging slippage on every trade. It prints the average profit per trade, how bumpy the ride was, and — crucially — how that compares to just buying and holding.</p>
+      <p><strong>The news-filter test</strong> answers a harder question: "what did the AI's vetoes cost?" You can't replay "was the AI right?" fairly, because Claude was trained on news from those years. So instead, run the replay twice — once with the filter, once without — and compare the totals. The difference is the price of the filter.</p>
+    </div>
+  </section>
 
-  <footer>
-    <p>Project 10X · paper trading only · engineering write-up, not financial advice.</p>
-  </footer>
+  <!-- ================================================================ -->
+  <section id="run">
+    <h2>10. Running it</h2>
+    <div class="col">
+      <p>Everything runs as Docker containers on one small server: the trading program, Redis, and MongoDB. Two more (a crypto agent and the AI-agent's tool server) exist but are switched off by default.</p>
+    </div>
+    <div class="code"><pre>cp .env.example .env          <span class="c-dim"># add your Alpaca keys and Claude login</span>
+docker compose up -d --build  <span class="c-dim"># starts the trader + redis + mongo</span>
+docker compose logs -f agent-equity | grep "trend tick"</pre></div>
+    <div class="col">
+      <p>The settings folder is mounted into the container, so changing a number in a YAML file and restarting is enough — no rebuild. Tests run with plain <code>pytest</code> and need no network: 73 of them, covering the rule, the replay, the hook, the kill switch, and the news parsing.</p>
+    </div>
+  </section>
 
+  <!-- ================================================================ -->
+  <section id="order">
+    <h2>11. Build order, with checks</h2>
+    <div class="col">
+      <p>If you were building this from scratch, this is the order that lets you verify each piece before the next depends on it. It is also, roughly, the order it was actually built — except the replay tool came far too late.</p>
+    </div>
+
+    <div class="step"><div class="step-n">1</div><div>
+      <h3>Read prices and your account</h3>
+      <p>Wrap the broker's library: get daily bars for one stock, get your balance. Nothing else yet.</p>
+      <div class="check"><b>Check:</b> print 400 days of Apple and your fake balance. If a split shows up as a fake crash, you forgot to ask for split-adjusted prices.</div>
+    </div></div>
+
+    <div class="step"><div class="step-n">2</div><div>
+      <h3>Write the rule as one pure function</h3>
+      <p><code>desired_long(bars) → True/False</code>. No network, no side effects. Put it somewhere the replay tool will import it from too.</p>
+      <div class="check"><b>Check:</b> feed it a steadily rising series, expect True; a falling one, expect False. Write these as tests now.</div>
+    </div></div>
+
+    <div class="step"><div class="step-n">3</div><div>
+      <h3>Build the replay tool — before the bot</h3>
+      <p>Walk day by day. Decide at each close, act at the next open. Charge slippage both ways. Print average profit per trade, and buy-and-hold for the same stocks.</p>
+      <div class="check"><b>Check:</b> run it on your rule over 4 years. If profit per trade is negative, stop and rethink the rule. If it doesn't beat buy-and-hold, be suspicious. Do not build the bot until this passes.</div>
+    </div></div>
+
+    <div class="step"><div class="step-n">4</div><div>
+      <h3>The hourly loop</h3>
+      <p>Scheduler → for each stock: fetch bars, drop today's unfinished bar, ask the rule, compare with holdings, act. No AI yet. No safety layer yet either — but no real money, so that's fine for a day.</p>
+      <div class="check"><b>Check:</b> run one tick by hand. Confirm it buys what the rule says and nothing else. Confirm a second run does nothing (it's already holding). Confirm exits happen after the close, not mid-day.</div>
+    </div></div>
+
+    <div class="step"><div class="step-n">5</div><div>
+      <h3>Safety limits and the kill switch</h3>
+      <p>Position cap, position count, daily loss limit. Store the day's start balance in Redis, keyed by date.</p>
+      <div class="check"><b>Check:</b> set the loss limit to 0.1% and watch it fire. Confirm buying stops and selling still works. Reset the key.</div>
+    </div></div>
+
+    <div class="step"><div class="step-n">6</div><div>
+      <h3>The diary</h3>
+      <p>One MongoDB record per tick with everything — especially the "did nothing" ticks.</p>
+      <div class="check"><b>Check:</b> after a quiet day, can you explain from the diary alone why nothing happened? If not, you're not recording enough.</div>
+    </div></div>
+
+    <div class="step"><div class="step-n">7</div><div>
+      <h3>The news check</h3>
+      <p>Fetch 48 hours of headlines. Send them to Claude with a tiny prompt asking for JSON. Parse it defensively. Cache per stock for two hours. On <em>any</em> error, return "don't block". Record the headlines and prompt version with every verdict.</p>
+      <div class="check"><b>Check:</b> unplug the network and confirm the bot still buys. Feed it a made-up "CEO arrested" headline and confirm it blocks.</div>
+    </div></div>
+
+    <div class="step"><div class="step-n">8</div><div>
+      <h3>Test the news check the hard way</h3>
+      <p>Run the replay twice, with and without the filter, over the same years. Compare average profit per trade. Count how many blocks landed on losing trades versus the loss rate you'd get by blocking at random.</p>
+      <div class="check"><b>Check:</b> if the filtered run is worse, raise the confidence threshold or switch it off. If it's about the same, it's harmless — keep it or not, but don't build on it.</div>
+    </div></div>
+
+    <div class="step"><div class="step-n">9</div><div>
+      <h3>Compare live to the replay — every week</h3>
+      <p>The step that was missing. Count your trades per week, note what time of day exits happen, note how long you hold. Compare each to the replay's numbers.</p>
+      <div class="check"><b>Check:</b> if live trades 2–3× as often as the replay, or exits cluster mid-day, live is not running the rule you tested. Find out why before anything else.</div>
+    </div></div>
+
+    <div class="plain">
+      <div class="k">If you only remember one step</div>
+      <p>Step 3 before step 4. The replay tool is not a nice-to-have you add later. It is the thing that decides whether the bot is allowed to exist.</p>
+    </div>
+  </section>
+
+  <div class="pager"><a href="approach.html">← Approach</a><a href="evals.html">Testing →</a></div>
+  <footer><p>Project 10X · paper trading only · not financial advice.</p></footer>
 </div>
 </body>
 </html>
