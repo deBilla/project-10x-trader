@@ -609,3 +609,22 @@ dl.gl dt { font-weight: 600; margin-top: 18px; scroll-margin-top: 70px; }
 dl.gl dd { margin: 4px 0 0; color: var(--text); }
 dl.gl dd .eg { color: var(--muted); font-size: .9rem; display: block; margin-top: 3px; }
 @media (max-width: 620px) { .step { grid-template-columns: 1fr; gap: 6px; } }
+
+/* Exported Drawpro lessons: preserve diagram colors in either site theme. */
+.agent-guide section { scroll-margin-top: 90px; }
+.diagram-image {
+  display: block;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+  cursor: zoom-in;
+}
+.diagram-image img { display: block; width: 100%; height: auto; }
+.diagram-downloads { display: block; margin-top: 8px; }
+.source-link { color: var(--muted); font-size: .875rem; }
+@media (max-width: 620px) {
+  .diagram-image { padding: 4px; }
+  .agent-guide section { scroll-margin-top: 130px; }
+}

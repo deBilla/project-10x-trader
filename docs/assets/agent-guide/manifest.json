@@ -1,0 +1,47 @@
+[
+  {
+    "slug": "01-basic-idea",
+    "name": "Learn Trader 01 — The basic idea",
+    "url": "https://drawpro.kithly.app/workspace/cmt7c113r000aotc0n62caa25/sheet/cmtzbodka0022tircxekcvrvt"
+  },
+  {
+    "slug": "02-tick",
+    "name": "Learn Trader 02 — What a tick means",
+    "url": "https://drawpro.kithly.app/workspace/cmt7c113r000aotc0n62caa25/sheet/cmtzbodn10024tircx42ectp0"
+  },
+  {
+    "slug": "03-engines",
+    "name": "Learn Trader 03 — Who makes decisions",
+    "url": "https://drawpro.kithly.app/workspace/cmt7c113r000aotc0n62caa25/sheet/cmtzbodpa0026tircflq2hxjq"
+  },
+  {
+    "slug": "04-react",
+    "name": "Learn Trader 04 — ReAct from basics",
+    "url": "https://drawpro.kithly.app/workspace/cmt7c113r000aotc0n62caa25/sheet/cmtzbodrg0028tircp63u4vqm"
+  },
+  {
+    "slug": "05-two-loops",
+    "name": "Learn Trader 05 — Two different loops",
+    "url": "https://drawpro.kithly.app/workspace/cmt7c113r000aotc0n62caa25/sheet/cmtzbodtl002atirck0ucbb4z"
+  },
+  {
+    "slug": "06-state",
+    "name": "Learn Trader 06 — Where state lives",
+    "url": "https://drawpro.kithly.app/workspace/cmt7c113r000aotc0n62caa25/sheet/cmtzbodvo002ctircju7zplu2"
+  },
+  {
+    "slug": "07-example",
+    "name": "Learn Trader 07 — A concrete tool example",
+    "url": "https://drawpro.kithly.app/workspace/cmt7c113r000aotc0n62caa25/sheet/cmtzbodxj002etirc55rzsb0e"
+  },
+  {
+    "slug": "08-llm-detail",
+    "name": "Trader — LLM agent loop",
+    "url": "https://drawpro.kithly.app/workspace/cmt7c113r000aotc0n62caa25/sheet/cmtzbg6li001ytircrmdmxq9s"
+  },
+  {
+    "slug": "09-trend-detail",
+    "name": "Trader — equity trend loop",
+    "url": "https://drawpro.kithly.app/workspace/cmt7c113r000aotc0n62caa25/sheet/cmtzbg6od0020tirczetnpx2j"
+  }
+]

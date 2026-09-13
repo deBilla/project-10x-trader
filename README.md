@@ -30,6 +30,10 @@ Activity ≠ profit — the winning strategy trades **rarely**.
 
 ---
 
+## Visual guide
+
+Start with [Understand the trading agent, from the basics](https://debilla.github.io/project-10x-trader/agent-loop.html): nine Drawpro diagrams with step-by-step explanations of ticks, ReAct, tools, risk checks, and state. [Local page](docs/agent-loop.html) · [Diagram exports](docs/assets/agent-guide/).
+
 ## Architecture
 
 ```
